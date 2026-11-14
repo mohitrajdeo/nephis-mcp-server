@@ -1,0 +1,12 @@
+startCommand:
+  type: stdio
+  config:
+    command: npx
+    args:
+      - "-y"
+      - "nephis-mcp-server"
+    env:
+      NEPHIS_API_URL: "https://nephis.theeducode.com"
+      NEPHIS_API_KEY: ""
+
+

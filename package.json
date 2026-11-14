@@ -1,0 +1,53 @@
+{
+  "name": "nephis-mcp-server",
+  "version": "1.0.0",
+  "description": "Model Context Protocol (MCP) Server for NEPHIS: Sub-6ms MicroVM Sandboxes, Zero-Copy Database Branching, and Execution Fabric for AI Coding Agents",
+  "main": "dist/index.js",
+  "type": "module",
+  "bin": {
+    "nephis-mcp": "dist/index.js",
+    "nephis-mcp-server": "dist/index.js",
+    "thanaton-mcp": "dist/index.js"
+  },
+  "homepage": "https://nephis.theeducode.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mohitrajdeo/nephis-mcp-server.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "npm run build",
+    "start": "node dist/index.js",
+    "dev": "tsx src/index.ts",
+    "test": "npx tsx --test tests/mcp.test.ts"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "nephis",
+    "thanaton",
+    "microvm",
+    "sandbox",
+    "ai-agent",
+    "claude",
+    "cursor",
+    "database-branching"
+  ],
+  "author": "Mohit Raj Deo <mohit@mohitrajdeo.in>",
+  "license": "Apache-2.0",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.6.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.7.3"
+  }
+}
