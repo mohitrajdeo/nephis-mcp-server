@@ -45,7 +45,7 @@ export class ThanatonConnectionError extends ThanatonError {
     super(
       `Cannot connect to Thanaton Daemon at ${url} (${reason}).\n` +
       "  -> If running locally: Launch the daemon with 'ananked' or 'python scripts/ananked.py'\n" +
-      "  -> If using managed cloud: Set baseUrl='https://api.ananke.run' and apiKey='sk_live_...'\n" +
+      "  -> If using managed cloud: Set baseUrl='https://nephis.theeducode.com/pricing' and apiKey='sk_live_...'\n" +
       "  -> Quickstart guide: https://nephis.theeducode.com/docs"
     );
     this.name = "ThanatonConnectionError";

@@ -6,11 +6,11 @@ Provides native bindings for microVM sandboxing, deterministic storage, and spec
 import os
 from typing import Optional, Dict, Any, List
 
-from ananke import *
-from ananke import __version__ as __upstream_version__
-from ananke.client import Client as UpstreamClient
-from ananke.exceptions import (
-    AnankeError,
+from nephis import *
+from nephis import __version__ as __upstream_version__
+from nephis.client import Client as UpstreamClient
+from nephis.exceptions import (
+    NephisError,
     AnankeConnectionError,
     APIError,
     ExecutionTimeoutError,
@@ -18,7 +18,7 @@ from ananke.exceptions import (
     SQLError,
     EscalationRequiredException,
 )
-from ananke.license import (
+from nephis.license import (
     LicenseAuthority as UpstreamLicenseAuthority,
     LicenseToken,
     LicenseError,
@@ -153,7 +153,7 @@ class NephisClient(UpstreamClient):
     def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, license_key: Optional[str] = None, timeout: int = 30):
         resolved_base_url = resolve_base_url(base_url)
         resolved_api_key = resolve_api_key(api_key, base_url=resolved_base_url)
-        resolved_license_key = license_key or os.environ.get("NEPHIS_LICENSE_KEY", os.environ.get("CIEL_LICENSE_KEY", os.environ.get("ANANKE_LICENSE_KEY")))
+        resolved_license_key = license_key or os.environ.get("NEPHIS_LICENSE_KEY", os.environ.get("CIEL_LICENSE_KEY", os.environ.get("NEPHIS_LICENSE_KEY")))
         super().__init__(base_url=resolved_base_url, api_key=resolved_api_key, license_key=resolved_license_key, timeout=timeout)
         self.admin = AdminManager(self)
         self.specbox = SpecBoxManager(self)
@@ -242,11 +242,11 @@ class NephisLicenseAuthority(UpstreamLicenseAuthority):
 # Canonical NEPHIS & Compatibility Aliases
 Client = NephisClient
 CielClient = NephisClient
-AnankeClient = NephisClient
+NephisClient = NephisClient
 LicenseAuthority = NephisLicenseAuthority
 CielLicenseAuthority = NephisLicenseAuthority
-NephisError = AnankeError
-CielError = AnankeError
+NephisError = NephisError
+CielError = NephisError
 NephisConnectionError = AnankeConnectionError
 CielConnectionError = AnankeConnectionError
 NephisAPIError = APIError
@@ -272,7 +272,7 @@ __all__ = [
     "NephisClient",
     "Client",
     "CielClient",
-    "AnankeClient",
+    "NephisClient",
     "EschatonClient",
     "EschatonError",
     "LicenseAuthority",

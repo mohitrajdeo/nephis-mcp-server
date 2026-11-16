@@ -413,7 +413,7 @@ class TestThanatonSDK(unittest.TestCase):
         err_msg = str(ctx.exception)
         self.assertIn("Cannot connect to Thanaton Daemon", err_msg)
         self.assertIn("Launch the daemon with 'ananked'", err_msg)
-        self.assertIn("Set base_url='https://api.ananke.run'", err_msg)
+        self.assertIn("Set base_url='https://nephis.theeducode.com/pricing'", err_msg)
 
     def test_escalation_required_exception(self):
         exc = thanaton.EscalationRequiredException(

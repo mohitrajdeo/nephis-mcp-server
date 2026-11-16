@@ -5,7 +5,7 @@
 
 export {
   ThanatonClient,
-  ThanatonClient as AnankeClient,
+  ThanatonClient as NephisClient,
   ThanatonClient as CielClient,
   ThanatonClient as NephisClient,
   ThanatonClient as Nephis,
@@ -81,7 +81,7 @@ export type {
   SandboxMetadata,
   SandboxRuntime,
   SandboxState,
-  AnankeTier,
+  NephisTier,
   LicenseStatus,
   WebhookDispatchOptions,
   FinOpsScanOptions,

@@ -1,13 +1,13 @@
 /**
- * Thanaton & Ananke TypeScript SDK - Core Type Definitions
+ * Thanaton & Nephis TypeScript SDK - Core Type Definitions
  */
 
 export interface ClientOptions {
-  /** Thanaton/Ananke Control Plane Base URL (defaults to http://127.0.0.1:8080) */
+  /** Thanaton/Nephis Control Plane Base URL (defaults to http://127.0.0.1:8080) */
   baseUrl?: string;
   /** Optional API Bearer Token for cloud/multi-tenant deployments */
   apiKey?: string;
-  /** Optional Cryptographic Ananke License Token (ank_lic_...) */
+  /** Optional Cryptographic Nephis License Token (ank_lic_...) */
   licenseKey?: string;
   /** Global HTTP Request Timeout in ms (default: 30000) */
   timeoutMs?: number;
@@ -79,10 +79,10 @@ export interface RunCodeOptions {
   timeoutMs?: number;
 }
 
-export type AnankeTier = "community" | "pro" | "enterprise";
+export type NephisTier = "community" | "pro" | "enterprise";
 
 export interface LicenseStatus {
-  tier: AnankeTier;
+  tier: NephisTier;
   tenant_id: string;
   is_valid: boolean;
   expires_at?: number | null;

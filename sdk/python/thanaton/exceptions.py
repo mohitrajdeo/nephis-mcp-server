@@ -59,7 +59,7 @@ class ThanatonConnectionError(ThanatonError):
         msg = (
             f"Cannot connect to Thanaton Daemon at {url} ({reason}).\n"
             "  -> If running locally: Launch the daemon with 'ananked' or 'python scripts/ananked.py'\n"
-            "  -> If using managed cloud: Set base_url='https://api.ananke.run' and api_key='sk_live_...'\n"
+            "  -> If using managed cloud: Set base_url='https://nephis.theeducode.com/pricing' and api_key='sk_live_...'\n"
             "  -> Quickstart guide: https://nephis.theeducode.com/docs"
         )
         super().__init__(msg)

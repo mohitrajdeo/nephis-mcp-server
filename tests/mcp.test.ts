@@ -96,7 +96,7 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(toolNames.includes("thanaton_sleep_sandbox"));
     assert.ok(toolNames.includes("thanaton_destroy_sandbox"));
 
-    // Ananke enterprise tools
+    // Nephis enterprise tools
     assert.ok(toolNames.includes("ananke_license_check"));
     assert.ok(toolNames.includes("ananke_license_generate"));
     assert.ok(toolNames.includes("ananke_cdc_inspect"));

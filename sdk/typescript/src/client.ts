@@ -1,8 +1,8 @@
 /**
- * Thanaton & Ananke TypeScript SDK - Main Client
+ * Thanaton & Nephis TypeScript SDK - Main Client
  *
  * Core entry point for provisioning, managing, and connecting to
- * hardware-isolated Thanaton MicroVM sandboxes and Ananke infrastructure engines.
+ * hardware-isolated Thanaton MicroVM sandboxes and Nephis infrastructure engines.
  */
 
 import { Sandbox } from "./sandbox.js";
@@ -147,7 +147,7 @@ export class DiagnosticsManager {
   async record(options: { cgroup?: string; thresholdMb?: number } = {}) {
     return {
       engine: "tombstone",
-      cgroup: options.cgroup || "/sys/fs/cgroup/ananke-workload",
+      cgroup: options.cgroup || "/sys/fs/cgroup/nephis-workload",
       threshold_mb: options.thresholdMb || 64,
       captured_at_pct: 76.6,
       top_allocators: ["bufio.NewWriterSize", "runtime.malg", "crypto/tls.Conn"],
@@ -239,7 +239,7 @@ export class DNSManager {
   async probe(options: { domain?: string; qps?: number; durationSec?: number } = {}) {
     return {
       engine: "xdpdns",
-      domain: options.domain || "*.ananke.internal",
+      domain: options.domain || "*.nephis.internal",
       qps: options.qps || 202882,
       min_latency_us: 7.46,
       median_latency_us: 11.23,
@@ -268,7 +268,7 @@ export class LiveMigrationManager {
 }
 
 /**
- * Thanaton & Ananke Cloud and Control Plane Client.
+ * Thanaton & Nephis Cloud and Control Plane Client.
  */
 export class ThanatonClient {
   public baseUrl: string;
@@ -310,7 +310,7 @@ export class ThanatonClient {
     }
     this.timeoutMs = options.timeoutMs || 30000;
 
-    const licenseKey = options.licenseKey || (typeof process !== "undefined" ? (process.env?.NEPHIS_LICENSE_KEY || process.env?.ANANKE_LICENSE_KEY || process.env?.CIEL_LICENSE_KEY) : undefined);
+    const licenseKey = options.licenseKey || (typeof process !== "undefined" ? (process.env?.NEPHIS_LICENSE_KEY || process.env?.NEPHIS_LICENSE_KEY || process.env?.CIEL_LICENSE_KEY) : undefined);
     this.authority = new LicenseAuthority(licenseKey);
 
     this.sandboxes = new SandboxManager(this);

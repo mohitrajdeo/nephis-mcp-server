@@ -1,12 +1,12 @@
 /**
- * Ananke Cryptographic License & Authority Engine (TypeScript / Node.js)
+ * Nephis Cryptographic License & Authority Engine (TypeScript / Node.js)
  *
  * Provides offline cryptographic signature verification, tier entitlement checks,
- * and quota enforcement across the Ananke CLI, MCP Server, and TypeScript SDK.
+ * and quota enforcement across the Nephis CLI, MCP Server, and TypeScript SDK.
  */
 
 import * as crypto from "node:crypto";
-import type { AnankeTier, LicenseStatus } from "./types.js";
+import type { NephisTier, LicenseStatus } from "./types.js";
 
 export const DEFAULT_LICENSE_SECRET = "ananke_enterprise_signing_secret_prod_2026";
 
@@ -22,7 +22,7 @@ export interface TierEntitlements {
   features: string[];
 }
 
-export const TIERS: Record<AnankeTier, TierEntitlements> = {
+export const TIERS: Record<NephisTier, TierEntitlements> = {
   community: {
     max_sandboxes: 5,
     max_cdc_events_per_day: 1000000,
@@ -80,7 +80,7 @@ export class LicenseError extends Error {
 export interface LicenseClaims {
   iss: string;
   tid: string;
-  tier: AnankeTier;
+  tier: NephisTier;
   iat: number;
   exp: number;
   ent: TierEntitlements;
@@ -88,7 +88,7 @@ export interface LicenseClaims {
 
 export interface GenerateLicenseOptions {
   tenantId: string;
-  tier?: AnankeTier;
+  tier?: NephisTier;
   expiresInDays?: number;
   secret?: string;
 }
@@ -109,7 +109,7 @@ export class LicenseToken {
     const expiresAt = issuedAt + expiresInDays * 86400;
 
     const claims: LicenseClaims = {
-      iss: "ananke-authority",
+      iss: "nephis-authority",
       tid: options.tenantId,
       tier,
       iat: issuedAt,
@@ -188,7 +188,7 @@ export class LicenseToken {
 export class LicenseAuthority {
   public token?: string;
   public secret: string;
-  public tier: AnankeTier;
+  public tier: NephisTier;
   public tenantId: string;
   public entitlements: TierEntitlements;
   public claims?: LicenseClaims;
@@ -227,8 +227,8 @@ export class LicenseAuthority {
       return true;
     }
     throw new LicenseError(
-      `Feature '${featureName}' requires an upgraded Ananke license tier (Current: ${this.tier.toUpperCase()}). ` +
-        `Please upgrade to PRO or ENTERPRISE at https://ananke.run/pricing`
+      `Feature '${featureName}' requires an upgraded Nephis license tier (Current: ${this.tier.toUpperCase()}). ` +
+        `Please upgrade to PRO or ENTERPRISE at https://nephis.theeducode.com/pricing`
     );
   }
 

@@ -28,7 +28,7 @@ def resolve_base_url(override: Optional[str] = None) -> str:
         if url != "http://127.0.0.1:8080":
             return url
 
-    for env_var in ("NEPHIS_BASE_URL", "NEPHIS_API_URL", "CIEL_BASE_URL", "THANATON_BASE_URL", "ANANKE_BASE_URL"):
+    for env_var in ("NEPHIS_BASE_URL", "NEPHIS_API_URL", "CIEL_BASE_URL", "THANATON_BASE_URL", "NEPHIS_BASE_URL"):
         val = os.environ.get(env_var)
         if val and val.strip():
             url = val.strip().rstrip("/")
@@ -189,7 +189,7 @@ def resolve_api_key(override: Optional[str] = None, base_url: Optional[str] = No
     """
     Resolve API Key strictly following precedence:
     1. Direct override
-    2. NEPHIS_API_KEY -> CIEL_API_KEY -> THANATON_API_KEY (also ANANKE_API_KEY)
+    2. NEPHIS_API_KEY -> CIEL_API_KEY -> THANATON_API_KEY (also NEPHIS_API_KEY)
     3. ~/.nephis/credentials.json
     4. Autonomous zero-human bootstrap PoW claim
     """
@@ -197,7 +197,7 @@ def resolve_api_key(override: Optional[str] = None, base_url: Optional[str] = No
         return override.strip()
 
     # 1. Environment variables
-    for env_var in ("NEPHIS_API_KEY", "CIEL_API_KEY", "THANATON_API_KEY", "ANANKE_API_KEY"):
+    for env_var in ("NEPHIS_API_KEY", "CIEL_API_KEY", "THANATON_API_KEY", "NEPHIS_API_KEY"):
         val = os.environ.get(env_var)
         if val and val.strip():
             return val.strip()

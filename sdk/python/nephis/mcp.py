@@ -20,15 +20,15 @@ if sys.stdout.encoding != 'utf-8':
     except Exception:
         pass
 
-# Ensure local ananke package can be imported directly
+# Ensure local nephis package can be imported directly
 current_dir = Path(__file__).resolve().parent
 sdk_python_dir = current_dir.parent
 if str(sdk_python_dir) not in sys.path:
     sys.path.insert(0, str(sdk_python_dir))
 
 try:
-    import ananke
-    from ananke.license import LicenseAuthority, LicenseToken
+    import nephis
+    from nephis.license import LicenseAuthority, LicenseToken
 except ImportError:
     pass
 
@@ -47,8 +47,8 @@ API_KEY = get_current_api_key()
 
 
 def get_client():
-    lic = os.environ.get("NEPHIS_LICENSE_KEY", os.environ.get("CIEL_LICENSE_KEY", os.environ.get("ANANKE_LICENSE_KEY")))
-    return ananke.Client(base_url=NEPHIS_URL, api_key=get_current_api_key(), license_key=lic)
+    lic = os.environ.get("NEPHIS_LICENSE_KEY", os.environ.get("CIEL_LICENSE_KEY", os.environ.get("NEPHIS_LICENSE_KEY")))
+    return nephis.Client(base_url=NEPHIS_URL, api_key=get_current_api_key(), license_key=lic)
 
 
 def api_call(method, path, body=None, timeout=30):
@@ -240,7 +240,7 @@ TOOLS = [
         }
     },
 
-    # Ananke License Authority & Monetization
+    # Nephis License Authority & Monetization
     {
         "name": "nephis_license_check",
         "description": "Check active tenant license tier, entitlements, and quota limits.",
@@ -253,7 +253,7 @@ TOOLS = [
     },
     {
         "name": "nephis_license_generate",
-        "description": "Generate a cryptographically signed Ananke commercial license token.",
+        "description": "Generate a cryptographically signed Nephis commercial license token.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -265,7 +265,7 @@ TOOLS = [
         }
     },
 
-    # Ananke Series Deterministic Infrastructure Tools
+    # Nephis Series Deterministic Infrastructure Tools
     {
         "name": "nephis_cdc_inspect",
         "description": "Inspect schema, row count, and records of a Walquet PostgreSQL CDC Parquet file.",
@@ -372,7 +372,7 @@ TOOLS = [
         }
     },
 
-    # Ananke Series Even Products (Security, FinOps, Performance, Isolation)
+    # Nephis Series Even Products (Security, FinOps, Performance, Isolation)
     {
         "name": "nephis_bastion_generate_token",
         "description": "Generate an ephemeral cryptographically signed zero-trust database bastion token.",
@@ -1126,7 +1126,7 @@ def handle_request(req):
 
             # 2. License Authority
             elif tool_name == "ananke_license_check":
-                token = args.get("token") or os.environ.get("ANANKE_LICENSE_KEY")
+                token = args.get("token") or os.environ.get("NEPHIS_LICENSE_KEY")
                 auth = LicenseAuthority(token)
                 return {
                     "jsonrpc": "2.0",
@@ -1150,7 +1150,7 @@ def handle_request(req):
                     }
                 }
 
-            # 3. Ananke Series Engines
+            # 3. Nephis Series Engines
             elif tool_name == "ananke_cdc_inspect":
                 res = client.cdc.inspect_parquet(args.get("file_path"))
                 return {

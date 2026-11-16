@@ -1,5 +1,5 @@
 """
-Comprehensive test suite for the Ananke Series unified SDK & authority engine.
+Comprehensive test suite for the Nephis Series unified SDK & authority engine.
 """
 
 import unittest
@@ -7,11 +7,11 @@ import sys
 import os
 from pathlib import Path
 
-# Insert local ananke package
+# Insert local nephis package
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import ananke
-from ananke.license import LicenseAuthority, LicenseToken, LicenseError
+import nephis
+from nephis.license import LicenseAuthority, LicenseToken, LicenseError
 
 
 from unittest.mock import patch, MagicMock
@@ -19,15 +19,15 @@ from unittest.mock import patch, MagicMock
 class TestAnankeSeriesSDK(unittest.TestCase):
     def setUp(self):
         # Hermetically isolate environment from external env vars
-        self.old_env = os.environ.pop("ANANKE_LICENSE_KEY", None)
+        self.old_env = os.environ.pop("NEPHIS_LICENSE_KEY", None)
         # Generate an Enterprise test license
         self.enterprise_token = LicenseToken(tenant_id="test-enterprise-corp", tier="enterprise", expires_in_days=30).generate()
-        self.community_client = ananke.Client()
-        self.enterprise_client = ananke.Client(license_key=self.enterprise_token)
+        self.community_client = nephis.Client()
+        self.enterprise_client = nephis.Client(license_key=self.enterprise_token)
 
     def tearDown(self):
         if self.old_env:
-            os.environ["ANANKE_LICENSE_KEY"] = self.old_env
+            os.environ["NEPHIS_LICENSE_KEY"] = self.old_env
 
     def test_license_authority_community(self):
         auth = self.community_client.authority
@@ -115,7 +115,7 @@ class TestAnankeSeriesSDK(unittest.TestCase):
             "db_port": 5432,
             "created_at": "2026-11-15T00:00:00Z"
         }
-        sbx = ananke.sandbox.Sandbox(self.enterprise_client, sbx_data)
+        sbx = nephis.sandbox.Sandbox(self.enterprise_client, sbx_data)
         pty = sbx.pty_info()
         self.assertIn(pty["status"], ("ready", "connected"))
         self.assertEqual(pty["terminal"], "xterm-256color")

@@ -320,7 +320,7 @@ class Client:
 
     def __init__(self, base_url: str = "https://thanaton.theeducode.com", api_key: Optional[str] = None, timeout: float = 30.0, admin_secret: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key or os.environ.get("NEPHIS_API_KEY", os.environ.get("THANATON_API_KEY", os.environ.get("ANANKE_API_KEY", "sk_live_master_test_key")))
+        self.api_key = api_key or os.environ.get("NEPHIS_API_KEY", os.environ.get("THANATON_API_KEY", os.environ.get("NEPHIS_API_KEY", "sk_live_master_test_key")))
         self.admin_secret = admin_secret or os.environ.get("THANATON_ADMIN_SECRET")
         self.timeout = timeout
         self.sandboxes = SandboxManager(self)

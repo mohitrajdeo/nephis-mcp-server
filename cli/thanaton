@@ -48,7 +48,7 @@ def get_stored_api_key() -> str:
 
 def get_client() -> thanaton.Client:
     base_url = os.environ.get("THANATON_URL", os.environ.get("THANATON_BASE_URL", os.environ.get("THANATON_API_URL", "https://thanaton.theeducode.com")))
-    api_key = os.environ.get("NEPHIS_API_KEY") or os.environ.get("THANATON_API_KEY") or os.environ.get("ANANKE_API_KEY") or get_stored_api_key()
+    api_key = os.environ.get("NEPHIS_API_KEY") or os.environ.get("THANATON_API_KEY") or os.environ.get("NEPHIS_API_KEY") or get_stored_api_key()
     return thanaton.Client(base_url=base_url, api_key=api_key or None)
 
 

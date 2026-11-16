@@ -66,7 +66,7 @@ async function runAutonomousEvaluation() {
   const init = await callRpc("initialize", {
     protocolVersion: "2024-11-05",
     capabilities: {},
-    clientInfo: { name: "ananke-autonomous-evaluator", version: "3.0.0" },
+    clientInfo: { name: "nephis-autonomous-evaluator", version: "3.0.0" },
   });
   child.stdin?.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized", params: {} }) + "\n");
 
