@@ -1,6 +1,6 @@
 {
   "name": "nephis-mcp-server",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Model Context Protocol (MCP) Server for NEPHIS: Sub-6ms MicroVM Sandboxes, Zero-Copy Database Branching, and Execution Fabric for AI Coding Agents",
   "main": "dist/index.js",
   "type": "module",
@@ -49,5 +49,6 @@
   "devDependencies": {
     "@types/node": "^22.13.0",
     "typescript": "^5.7.3"
-  }
+  },
+  "mcpName": "io.github.mohitrajdeo/nephis-mcp-server"
 }

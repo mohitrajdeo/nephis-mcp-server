@@ -3,7 +3,7 @@
   "name": "io.github.mohitrajdeo/nephis-mcp-server",
   "title": "NEPHIS MCP Server",
   "description": "Sub-6ms microVM sandboxes, zero-copy Postgres branching, and fast code execution in ap-south-1.",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "repository": {
     "url": "https://github.com/mohitrajdeo/nephis-mcp-server",
     "source": "github"
@@ -13,7 +13,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "nephis-mcp-server",
-      "version": "1.0.5",
+      "version": "1.0.6",
       "transport": {
         "type": "stdio"
       }
