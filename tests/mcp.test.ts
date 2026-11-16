@@ -109,7 +109,49 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(toolNames.includes("ananke_rootfs_build_manifest"));
     assert.ok(toolNames.includes("ananke_dns_probe"));
     assert.ok(toolNames.includes("ananke_socket_migrate_demo"));
-    assert.equal(res.result.tools.length, 19);
+    // Thanaton project & infra tools
+    assert.ok(toolNames.includes("thanaton_list_projects"));
+    assert.ok(toolNames.includes("thanaton_create_project"));
+    assert.ok(toolNames.includes("thanaton_manage_env"));
+    assert.ok(toolNames.includes("thanaton_rollback"));
+    assert.ok(toolNames.includes("thanaton_promote"));
+    assert.ok(toolNames.includes("thanaton_configure_waf"));
+    assert.ok(toolNames.includes("thanaton_configure_scaling"));
+
+    // Mnemon DB tools
+    assert.ok(toolNames.includes("mnemon_list_tenants"));
+    assert.ok(toolNames.includes("mnemon_create_branch"));
+    assert.ok(toolNames.includes("mnemon_promote_branch"));
+    assert.ok(toolNames.includes("mnemon_reset_branch"));
+    assert.ok(toolNames.includes("mnemon_diff_branch"));
+    assert.ok(toolNames.includes("mnemon_execute_sql"));
+    assert.ok(toolNames.includes("mnemon_get_schema"));
+    assert.ok(toolNames.includes("mnemon_configure_scaling"));
+    assert.ok(toolNames.includes("mnemon_configure_pooler"));
+    assert.ok(toolNames.includes("mnemon_manage_extensions"));
+    assert.ok(toolNames.includes("mnemon_get_slow_queries"));
+
+    // Head PTY, L4 Port, Speculative Race & WAL Rewind Tools
+    assert.ok(toolNames.includes("thanaton_pty_info"));
+    assert.ok(toolNames.includes("thanaton_expose_port"));
+    assert.ok(toolNames.includes("thanaton_list_ports"));
+    assert.ok(toolNames.includes("thanaton_close_port"));
+    assert.ok(toolNames.includes("thanaton_speculate_race"));
+    assert.ok(toolNames.includes("mnemon_wal_rewind"));
+
+    // Sovereign Moats: Persistent ext4, Dual-Probe, MMDS Secrets, Reflink Vector, AST Preflight
+    assert.ok(toolNames.includes("thanaton_get_volumes"));
+    assert.ok(toolNames.includes("thanaton_attach_volume"));
+    assert.ok(toolNames.includes("thanaton_dual_probe"));
+    assert.ok(toolNames.includes("thanaton_inject_secrets"));
+    assert.ok(toolNames.includes("thanaton_reap_extents"));
+    assert.ok(toolNames.includes("mnemon_clone_vector"));
+    assert.ok(toolNames.includes("mnemon_autofreeze_policy"));
+    assert.ok(toolNames.includes("eschaton_preflight_check"));
+    assert.ok(toolNames.includes("eschaton_fast_batch"));
+    assert.ok(toolNames.includes("nephis_fast_batch"));
+
+    assert.equal(res.result.tools.length, 55);
   });
 
   let provisionedSandboxId = "";
@@ -241,6 +283,83 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     const data = JSON.parse(res.result.content[0].text);
     assert.equal(data.engine, "zombieprune");
     assert.equal(data.total_monthly_waste_usd, 138.6);
+  });
+
+  it("should attach persistent ext4 volume via thanaton_attach_volume", async () => {
+    const res = await sendRpc("tools/call", {
+      name: "thanaton_attach_volume",
+      arguments: {
+        sandbox_id: "sbx-test-vol",
+        mount_path: "/data",
+        size_gb: 20,
+      },
+    });
+    assert.ok(res.result);
+    const data = JSON.parse(res.result.content[0].text);
+    assert.equal(data.status, "VOLUME_ATTACHED");
+    assert.equal(data.volume.mount_path, "/data");
+    assert.equal(data.volume.persist_at_scale, true);
+  });
+
+  it("should execute in-memory AST syntax preflight via eschaton_preflight_check", async () => {
+    const res = await sendRpc("tools/call", {
+      name: "eschaton_preflight_check",
+      arguments: {
+        code: "while True: pass",
+        language: "python",
+      },
+    });
+    assert.ok(res.result);
+    const data = JSON.parse(res.result.content[0].text);
+    assert.equal(data.infinite_loop_risk, true);
+    assert.equal(data.hazard_detected, true);
+  });
+
+  it("should handle PTY and L4 port forwarding via MCP", async () => {
+    const ptyRes = await sendRpc("tools/call", {
+      name: "thanaton_pty_info",
+      arguments: { sandbox_id: provisionedSandboxId },
+    });
+    assert.ok(ptyRes.result);
+    const ptyData = JSON.parse(ptyRes.result.content[0].text);
+    assert.equal(ptyData.sandbox_id, provisionedSandboxId);
+    assert.ok(ptyData.pty_endpoint.startsWith("wss://"));
+
+    const portRes = await sendRpc("tools/call", {
+      name: "thanaton_expose_port",
+      arguments: { sandbox_id: provisionedSandboxId, guest_port: 5432, service_name: "postgres" },
+    });
+    assert.ok(portRes.result);
+    const portData = JSON.parse(portRes.result.content[0].text);
+    assert.equal(portData.sandbox_id, provisionedSandboxId);
+    assert.equal(portData.guest_port, 5432);
+    assert.ok(portData.host_port >= 12000);
+  });
+
+  it("should execute speculative branch racing and WAL rewind via MCP", async () => {
+    const raceRes = await sendRpc("tools/call", {
+      name: "thanaton_speculate_race",
+      arguments: {
+        problem_id: "mcp_race_1",
+        candidates: [
+          { id: "patch_a", command: "pytest tests/broken" },
+          { id: "patch_b", command: "pytest tests/passing" },
+        ],
+      },
+    });
+    assert.ok(raceRes.result);
+    const raceData = JSON.parse(raceRes.result.content[0].text);
+    assert.equal(raceData.problem_id, "mcp_race_1");
+    assert.equal(raceData.total_candidates, 2);
+
+    const walRes = await sendRpc("tools/call", {
+      name: "mnemon_wal_rewind",
+      arguments: { sandbox_id: provisionedSandboxId, target_time: "2026-11-15T01:00:00Z" },
+    });
+    assert.ok(walRes.result);
+    const walData = JSON.parse(walRes.result.content[0].text);
+    assert.equal(walData.status, "REWOUND");
+    assert.ok(walData.connection_string.includes("postgresql://"));
   });
 
   it("should return an error for unknown tools", async () => {
