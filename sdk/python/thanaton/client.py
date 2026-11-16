@@ -725,7 +725,7 @@ class Client:
             return {
                 "avenue": "Avenue 4: High-Performance Serverless MicroVM Runner",
                 "version": "v2.0.0",
-                "sabre_warm_pool": {
+                "thanaton_warm_pool": {
                     "memory_footprint_mb": float(guest_ram_mb),
                     "compression_ratio": 489.3,
                     "restore_latency_ms": 6.51,

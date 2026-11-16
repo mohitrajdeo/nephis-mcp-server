@@ -3204,7 +3204,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 fork_bomb_risk: hasForkBomb,
                 preflight_duration_us: 12,
                 rejection_reason: hasInfiniteLoop ? "Eschaton AST Preflight Interception: Infinite loop hazard detected (while True: pass)" : undefined,
-                mode: "ALETHEIA_AST_IN_MEMORY_PREFLIGHT",
+                mode: "ESCHATON_AST_IN_MEMORY_PREFLIGHT",
                 simulation: true,
                 notice: apiErr.message,
               }, null, 2),

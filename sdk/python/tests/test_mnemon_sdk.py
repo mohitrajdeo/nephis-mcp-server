@@ -149,7 +149,7 @@ def test_rest_query(mock_get):
 
 @patch("requests.post")
 @patch("requests.get")
-def test_lethe_cdc(mock_get, mock_post):
+def test_mnemon_cdc(mock_get, mock_post):
     # Mock CDC publish
     mock_post_resp = MagicMock()
     mock_post_resp.ok = True
