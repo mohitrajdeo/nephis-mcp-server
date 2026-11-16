@@ -1,0 +1,31 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-07-09/server.schema.json",
+  "name": "io.github.mohitrajdeo/nephis-mcp-server",
+  "description": "Unified Developer Platform & MCP Server for Nephis: Sub-6ms MicroVM Sandboxes (Thanaton), Zero-Copy Postgres Branching (Mnemon), and 10x Faster Code Execution (Eschaton) hosted in Asia-Pacific (ap-south-1).",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/mohitrajdeo/nephis-mcp-server",
+    "source": "github"
+  },
+  "version": "1.0.5",
+  "packages": [
+    {
+      "registry_type": "npm",
+      "registry_base_url": "https://registry.npmjs.org",
+      "identifier": "nephis-mcp-server",
+      "version": "1.0.5",
+      "transport": {
+        "type": "stdio"
+      }
+    },
+    {
+      "registry_type": "docker",
+      "registry_base_url": "https://index.docker.io/v1/",
+      "identifier": "mrmohitrajdeo/nephis-mcp-server",
+      "version": "v1.0.5",
+      "transport": {
+        "type": "stdio"
+      }
+    }
+  ]
+}
