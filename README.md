@@ -1,261 +1,1850 @@
-# NEPHIS MCP Server (`nephis-mcp-server`)
+# NEPHIS Model Context Protocol (MCP) Server (`nephis-mcp-server`)
 
-> **Model Context Protocol (MCP) Server for NEPHIS**  
-> Sub-6ms KVM MicroVM Sandboxes, Zero-Copy Database Branching, and Execution Fabric for AI Coding Agents.
+> **The Sovereign MCP Control Plane for Autonomous AI Coding Agents.**  
+> Provides sub-6ms hardware KVM microVM sandboxes, 30ms zero-copy PostgreSQL branching, in-memory AST compiler pipelines, and kernel infrastructure to LLMs (Claude Desktop, Cursor, Windsurf, Devin, Antigravity).
 
-[![MCP Registry](https://img.shields.io/badge/MCP-Protocol%202024--11--05-purple.svg)](https://modelcontextprotocol.io/)
+[![MCP Protocol](https://img.shields.io/badge/MCP-Protocol%202024--11--05-purple.svg)](https://modelcontextprotocol.io/)
 [![npm version](https://img.shields.io/npm/v/nephis-mcp-server.svg)](https://www.npmjs.com/package/nephis-mcp-server)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[![Tools Count](https://img.shields.io/badge/Tools-53%20Production%20Tools-brightgreen.svg)](#-exhaustive-catalog-of-all-53-mcp-tools)
 
 ---
 
 ## ⚡ Architecture Overview
 
-> **Canonical Production Gateway:** [https://nephis.theeducode.com](https://nephis.theeducode.com)  
-> **Instant Self-Serve API Keys (10k Free Runs):** [https://nephis.theeducode.com/keys](https://nephis.theeducode.com/keys)  
-> **Commercial Pricing Table:** [https://nephis.theeducode.com/pricing.html](https://nephis.theeducode.com/pricing.html)  
-> **Quickstart Command:** `npx -y nephis-mcp-server`
+> 🌐 **Canonical Production Gateway:** [https://nephis.theeducode.com](https://nephis.theeducode.com)  
+> ⚡ **Eschaton Online Judge (Sub-38ms):** [https://eschaton.theeducode.com](https://eschaton.theeducode.com)  
+> 💻 **Thanaton MicroVM Studio (Sub-6ms):** [https://thanaton.theeducode.com](https://thanaton.theeducode.com)  
+> 🗄️ **Mnemon-DB Postgres Studio (31ms CoW):** [https://mnemon.theeducode.com](https://mnemon.theeducode.com)  
+> 💳 **Centralized Billing & Refill Hub:** [https://nephis.theeducode.com/billing](https://nephis.theeducode.com/billing)  
+> 🚀 **Single-Command Agent Launch:** `npx -y nephis-mcp-server`
 
-The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants (**Claude Desktop**, **Cursor**, **Windsurf**, and **Cline**) directly to NEPHIS's bare-metal MicroVM engine and the wider NEPHIS Systems Fabric:
-- **Eschaton**: 74k RPS bare-metal online judge with 38ms parallel testcase fan-out.
-- **Thanaton**: Sub-12ms hardware KVM microVMs with 10.4 GB/s Sabre restore and $0 idle RAM cost.
-- **Mnemon-DB**: 31ms zero-copy PostgreSQL 16 + pgvector branching with 2.26 GB/s FastCDC.
-- **Aletheia**: 1.09µs fuel-metered in-memory symbolic verifier (100% Free Apache 2.0).
-- **Hyperion, Acheron, Lethe, Kronos**: On-premises kernel schedulers, zero-tax networks, CDC Parquet streaming, and deterministic hypervisors.
+---
+
+### ⚡ Autonomous Zero-Human PoW Self-Bootstrap (500 Free Credits • 30-Day Trial)
+
+When an autonomous AI agent launches `nephis-mcp-server` without an explicit `NEPHIS_API_KEY`:
+1. The server automatically computes a local machine fingerprint (MAC, CPU, host) and requests a cryptographic Proof-of-Work challenge from the gateway.
+2. In **< 80 milliseconds**, it solves the challenge and claims an active **500 Starter Credit Developer Session** (`mrd_live_...`).
+3. Credentials are saved locally to `~/.nephis/credentials.json` with automatic session renewal.
+4. **Zero human logins, zero credit cards, zero browser popups required.** Human developers can also claim their session with 1-click GitHub OAuth on [nephis.theeducode.com](https://nephis.theeducode.com) to upgrade to 2,000 monthly credits.
+
+The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants directly to bare-metal compute and database substrates across 4 sovereign pillars:
+1. **THANATON (24 Tools):** Hardware KVM microVM sandboxes, sub-6ms boot, scale-to-zero stasis ($0 idle RAM), PTY terminals, and Layer 4 port forwards.
+2. **MNEMON-DB (14 Tools):** 30ms zero-copy PostgreSQL 16 branching (XFS CoW reflinks), embedded vector search, schema diffing, and WAL rewind.
+3. **ESCHATON & NEPHIS (3 Tools):** Sub-38ms parallel online code judging, in-memory AST hazard detection (<50µs), and 50-testcase fast-batch execution.
+4. **ANANKE SYSTEMS (12 Tools):** Kernel infrastructure, eBPF connection pooling, zero-copy S3 streaming pipes, tombstone crash autopsy, and live socket migration.
 
 ```
-┌─────────────────────────────────┐
-│ AI Coding Agent                 │
-│ (Claude / Cursor / Windsurf)    │
-└────────────────┬────────────────┘
-                 │
-                 │ JSON-RPC 2.0 (stdio / SSE)
-                 ▼
-┌─────────────────────────────────┐
-│ Thanaton MCP Server             │
-│ (@thanaton/mcp-server)          │
-└────────────────┬────────────────┘
-                 │
-                 │ REST Control Plane (Port 8080 / mTLS)
-                 ▼
-┌─────────────────────────────────┐
-│ Project Thanaton Engine (KVM)   │
-│ ├── Firecracker MicroVMs        │ ──► Sub-6ms boot (<2ms with UFFD)
-│ ├── Cgroups v2 Jailer           │ ──► Hardened hardware sandbox
-│ ├── SSRF Firewall (iptables)    │ ──► Blocks 169.254.169.254 metadata
-│ └── Scale-to-Zero Snapshotting  │ ──► Drops RAM to 0 MB when idle
-└─────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│ Autonomous AI Coding Agent (Cursor / Claude / Devin)   │
+└───────────────────────────┬────────────────────────────┘
+                            │ JSON-RPC 2.0 (stdio / SSE)
+                            ▼
+┌────────────────────────────────────────────────────────┐
+│ NEPHIS Unified MCP Server (53 Sovereign Tools)         │
+└───────┬───────────────────┬───────────────────┬────────┘
+        │                   │                   │
+        ▼                   ▼                   ▼
+┌──────────────┐    ┌──────────────┐    ┌──────────────┐
+│   THANATON   │    │  MNEMON-DB   │    │   ESCHATON   │
+│ MicroVMs &   │    │  Zero-Copy   │    │ Sub-38ms AST │
+│ KVM Compute  │    │  PostgreSQL  │    │ Polyglot CI  │
+└──────────────┘    └──────────────┘    └──────────────┘
 ```
 
 ---
 
-## 🛠️ Complete MCP Tool Catalog
+## 🚀 10-Second Setup for Coding Agents
 
-The server exposes **7 production tools** over standard MCP JSON-RPC:
+### Option 1: Claude Desktop (`claude_desktop_config.json`)
+```json
+{
+  "mcpServers": {
+    "nephis": {
+      "command": "npx",
+      "args": ["-y", "nephis-mcp-server"],
+      "env": {
+        "NEPHIS_API_KEY": "mrd_live_YOUR_KEY",
+        "NEPHIS_BASE_URL": "https://nephis.theeducode.com"
+      }
+    }
+  }
+}
+```
+
+### Option 2: Cursor (`.cursor/mcp.json` or Global Settings)
+```json
+{
+  "mcpServers": {
+    "nephis": {
+      "command": "npx",
+      "args": ["-y", "nephis-mcp-server"],
+      "env": {
+        "NEPHIS_API_KEY": "mrd_live_YOUR_KEY",
+        "NEPHIS_BASE_URL": "https://nephis.theeducode.com"
+      }
+    }
+  }
+}
+```
+
+### Option 3: Windsurf (`~/.codeium/windsurf/mcp_config.json`)
+```json
+{
+  "mcpServers": {
+    "nephis": {
+      "command": "npx",
+      "args": ["-y", "nephis-mcp-server"],
+      "env": {
+        "NEPHIS_BASE_URL": "https://nephis.theeducode.com"
+      }
+    }
+  }
+}
+```
+
+### Option 4: Cline / Roo Code (`cline_mcp_settings.json`)
+```json
+{
+  "mcpServers": {
+    "nephis": {
+      "command": "npx",
+      "args": ["-y", "nephis-mcp-server"],
+      "env": {
+        "NEPHIS_BASE_URL": "https://nephis.theeducode.com"
+      }
+    }
+  }
+}
+```
+
+### Option 5: Google Antigravity & Gemini CLI
+Add `nephis` to your project's `antigravity.json` or run `npx nephis-mcp-server` directly via stdio transport.
+
+---
+
+## 📋 Tool Navigation Summary
+
+| Category | Count | Focus Areas |
+| :--- | :---: | :--- |
+| [THANATON (Compute & Sandboxes)](#1-thanaton--hardware-kvm-microvms--compute-sandboxes) | 24 | MicroVM boot, PTY, ports, secrets, volumes, projects, WAF |
+| [MNEMON-DB (Databases & Vector)](#2-mnemon-db--zero-copy-isolated-database-engine--branching) | 14 | 30ms CoW branching, SQL queries, schema diff, pgvector, WAL rewind |
+| [ESCHATON & NEPHIS (Execution)](#3-eschaton--nephis--autonomous-polyglot-code-execution--fast-batch) | 3 | AST preflight, 50-testcase fast-batch, compiler pipeline |
+| [ANANKE SYSTEMS (Kernel Infrastructure)](#4-ananke-systems--kernel-infrastructure-finops--reliability) | 12 | eBPF pooler, S3 pipe, crash autopsy, chaos, live socket migration |
+| **Total Production Tools** | **53** | **100% Machine-Readable & Standardized** |
+
+---
+
+## 🛠 Exhaustive Catalog of All 53 MCP Tools
+
+
+## THANATON • Hardware KVM MicroVMs & Compute Sandboxes
+
+Contains **24 production tools** specifically designed for agent autonomy.
 
 ### 1. `thanaton_exec_command`
-Executes an arbitrary bash or shell command inside an isolated MicroVM sandbox.
 
-- **Parameters:**
-  - `command` *(string, required)*: Shell command to execute (e.g. `npm test`, `git status`, `python3 script.py`).
-  - `sandbox_id` *(string, optional)*: Target sandbox ID. If omitted, an ephemeral sandbox is created automatically.
-  - `timeout_ms` *(number, optional)*: Maximum execution timeout in ms (default: `15000`).
-- **Response Format:**
-  ```json
-  {
-    "sandbox_id": "sbx_a1b2c3",
-    "command": "python3 -c 'print(42)'",
-    "stdout": "42\n",
-    "stderr": "",
-    "exit_code": 0,
-    "duration_ms": 11.2
-  }
-  ```
+> **Description:** Execute an arbitrary shell command (bash, sh) inside an isolated, hardware-virtualized MicroVM sandbox. Returns stdout, stderr, exit code, and execution latency.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `command` | `string` | ✅ Yes | - | The shell command to execute inside the MicroVM (e.g., 'python3 -c "print(2+2)"', 'npm test', 'git status') |
+| `sandbox_id` | `string` | ❌ No | - | Optional existing sandbox ID. If omitted, an ephemeral sub-6ms sandbox will be provisioned automatically. |
+| `timeout_ms` | `number` | ❌ No | - | Maximum execution timeout in milliseconds (default: 15000) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_exec_command",
+    "arguments": {
+      "command": "uname -a && free -m",
+      "sandbox_id": "sbx-kvm-9f82d1",
+      "timeout_ms": 10000
+    }
+  },
+  "id": 1
+}
+```
 
 ---
 
 ### 2. `thanaton_run_code`
-Directly compiles and runs standalone code snippets with Base64 encoding to prevent parameter injection or shell quoting failures.
 
-- **Parameters:**
-  - `language` *(string, required)*: One of `"python"`, `"javascript"`, `"typescript"`, `"go"`, `"rust"`, `"c"`, `"cpp"`, `"bash"`.
-  - `code` *(string, required)*: The source code snippet to compile and execute.
-  - `timeout_ms` *(number, optional)*: Execution timeout in ms (default: `10000`).
-- **Response Format:**
-  ```json
-  {
-    "language": "python",
-    "stdout": "Result: 144\n",
-    "stderr": "",
-    "exit_code": 0,
-    "execution_time_ms": 9.4
-  }
-  ```
+> **Description:** Directly run a standalone, single-file code snippet in an ephemeral, stateless microVM sandbox (automatically destroyed after execution). For stateful multi-step terminal interactions, filesystem persistence, or long-running processes, use 'thanaton_spawn_sandbox' followed by 'thanaton_exec_command' passing the 'sandbox_id'.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `language` | `string` | ✅ Yes | - | Programming language runtime (Enum: `[python, javascript, typescript, go, rust, c, cpp, bash]`) |
+| `code` | `string` | ✅ Yes | - | The complete source code snippet to compile and execute |
+| `timeout_ms` | `number` | ❌ No | - | Timeout in milliseconds (default: 10000) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_run_code",
+    "arguments": {
+      "language": "python",
+      "code": "print('Executed safely via Nephis')",
+      "timeout_ms": 10000
+    }
+  },
+  "id": 2
+}
+```
 
 ---
 
 ### 3. `thanaton_spawn_sandbox`
-Provisions a new hardware-isolated KVM MicroVM with customizable RAM, vCPU quota, and optional embedded PostgreSQL database.
 
-- **Parameters:**
-  - `runtime` *(string, optional)*: `"microvm"` (default) or `"silicon"`.
-  - `memory_mb` *(number, optional)*: RAM allocation in MiB (default: `256`, max: `4096`).
-  - `with_db` *(boolean, optional)*: Whether to bundle an embedded PostgreSQL instance (default: `false`).
-- **Response Format:**
-  ```json
-  {
-    "status": "success",
-    "sandbox_id": "sbx_f8a92e",
-    "runtime": "microvm",
-    "state": "running",
-    "boot_duration_ms": 5.82,
-    "db_url": "postgresql://postgres:thanaton@172.16.2.2:5432/sbx_f8a92e"
-  }
-  ```
+> **Description:** Provision a new hardware-isolated KVM MicroVM or Silicon isolate. Supports scale-to-zero, memory snapshots, and optional embedded PostgreSQL database.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `runtime` | `string` | ❌ No | - | Runtime environment type (default: 'microvm') (Enum: `[microvm, silicon, node, python]`) |
+| `memory_mb` | `number` | ❌ No | - | Allocated RAM in MiB (default: 256) |
+| `with_db` | `boolean` | ❌ No | - | Whether to bundle an isolated PostgreSQL database inside the sandbox |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_spawn_sandbox",
+    "arguments": {
+      "runtime": "microvm",
+      "memory_mb": 256,
+      "with_db": true
+    }
+  },
+  "id": 3
+}
+```
 
 ---
 
 ### 4. `thanaton_list_sandboxes`
-Lists all active, sleeping, and managed MicroVM sandboxes across the current organization.
+
+> **Description:** List all active, sleeping, and managed MicroVM sandboxes across the current tenant.
+
+**Parameter Specification:**
+
+_No input parameters required._
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_list_sandboxes",
+    "arguments": {}
+  },
+  "id": 4
+}
+```
 
 ---
 
 ### 5. `thanaton_wake_sandbox`
-Instantly wakes a hibernated MicroVM from an NVMe memory snapshot in sub-6ms (<2ms with Userfaultfd).
 
-- **Parameters:**
-  - `sandbox_id` *(string, required)*: ID of the sleeping sandbox to wake.
+> **Description:** Instantly wake a sleeping/hibernated MicroVM from NVMe memory snapshot in sub-6ms (<2ms with UFFD lazy-paging).
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | The ID of the sleeping sandbox to wake |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_wake_sandbox",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1"
+    }
+  },
+  "id": 5
+}
+```
 
 ---
 
 ### 6. `thanaton_sleep_sandbox`
-Scales a MicroVM to zero. Guest RAM is flushed to an NVMe golden memory snapshot; CPU usage drops to 0.00% and RAM allocation drops to 0 MB ($0 idle cost).
 
-- **Parameters:**
-  - `sandbox_id` *(string, required)*: ID of the sandbox to hibernate.
+> **Description:** Scale a MicroVM to zero (hibernates RAM to NVMe snapshot, 0% CPU consumption, $0 cost).
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | The ID of the running sandbox to put to sleep |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_sleep_sandbox",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1"
+    }
+  },
+  "id": 6
+}
+```
 
 ---
 
 ### 7. `thanaton_destroy_sandbox`
-Terminates guest processes, deletes TAP network interfaces, unlinks cgroups, and frees all resources.
 
-- **Parameters:**
-  - `sandbox_id` *(string, required)*: ID of the sandbox to delete.
+> **Description:** Terminate processes, tear down TAP network interface, cgroups, and reclaim all sandbox resources.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | The ID of the sandbox to destroy |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_destroy_sandbox",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1"
+    }
+  },
+  "id": 7
+}
+```
 
 ---
 
-## 🚀 Client Configuration Guides
+### 8. `thanaton_list_projects`
 
-### 1. Claude Desktop Setup
-Open your Claude configuration file:
-- **macOS:** `~/Library/Application Support/Claude/claude_desktop_config.json`
-- **Windows:** `%APPDATA%\Claude\claude_desktop_config.json`
+> **Description:** List all Thanaton serverless application projects and their live domains.
 
-Add the `thanaton` server:
+**Parameter Specification:**
 
+_No input parameters required._
+
+**Sample JSON-RPC Invocation:**
 ```json
 {
-  "mcpServers": {
-    "thanaton": {
-      "command": "node",
-      "args": ["d:/MOHIT/testing-judge0-vm/mcp-server/dist/index.js"],
-      "env": {
-        "THANATON_API_URL": "http://127.0.0.1:8080",
-        "THANATON_API_KEY": ""
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_list_projects",
+    "arguments": {}
+  },
+  "id": 8
+}
+```
+
+---
+
+### 9. `thanaton_create_project`
+
+> **Description:** Create a new project/application deployment target in Thanaton.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `name` | `string` | ✅ Yes | - | Project name |
+| `slug` | `string` | ❌ No | - | Optional custom project slug |
+| `runtime` | `string` | ❌ No | - | Application runtime (default: nodejs) (Enum: `[nodejs, python, go, rust, docker]`) |
+| `app_port` | `number` | ❌ No | - | Internal HTTP listening port (default: 3000) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_create_project",
+    "arguments": {
+      "name": "sample_name",
+      "slug": "sample_slug",
+      "runtime": "nodejs",
+      "app_port": 8080
+    }
+  },
+  "id": 9
+}
+```
+
+---
+
+### 10. `thanaton_manage_env`
+
+> **Description:** List, set, or delete project environment variables.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `project_id` | `string` | ✅ Yes | - | Target project ID |
+| `action` | `string` | ✅ Yes | - | Action to perform (Enum: `[list, set, delete]`) |
+| `key` | `string` | ❌ No | - | Environment variable key |
+| `value` | `string` | ❌ No | - | Variable value (for set action) |
+| `environment` | `string` | ❌ No | - | Target environment (Enum: `[production, preview, development, all]`) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_manage_env",
+    "arguments": {
+      "project_id": "sample_project_id",
+      "action": "list",
+      "key": "sample_key",
+      "value": "sample_value",
+      "environment": "production"
+    }
+  },
+  "id": 10
+}
+```
+
+---
+
+### 11. `thanaton_rollback`
+
+> **Description:** Instant atomic rollback of production traffic to a previous deployment snapshot in 8.2ms.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `project_id` | `string` | ✅ Yes | - | Target project ID |
+| `deployment_id` | `string` | ✅ Yes | - | Target snapshot deployment ID to restore |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_rollback",
+    "arguments": {
+      "project_id": "sample_project_id",
+      "deployment_id": "sample_deployment_id"
+    }
+  },
+  "id": 11
+}
+```
+
+---
+
+### 12. `thanaton_promote`
+
+> **Description:** Promote staging preview deployment snapshot to 100% production traffic in 6.4ms.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `project_id` | `string` | ✅ Yes | - | Target project ID |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_promote",
+    "arguments": {
+      "project_id": "sample_project_id"
+    }
+  },
+  "id": 12
+}
+```
+
+---
+
+### 13. `thanaton_configure_waf`
+
+> **Description:** Inspect or configure edge Web Application Firewall (WAF) Attack Mode, rate limits, allowlist, and blocklist.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `project_id` | `string` | ✅ Yes | - | Target project ID |
+| `action` | `string` | ✅ Yes | - | Action to perform (Enum: `[get, set]`) |
+| `attack_mode` | `boolean` | ❌ No | - | Enable Under Attack Mode (cryptographic PoW challenge) |
+| `rate_limit_rps` | `number` | ❌ No | - | Per-IP rate limit RPS threshold |
+| `allowlist` | `array` | ❌ No | - | CIDR allowlist IP blocks |
+| `blocklist` | `array` | ❌ No | - | CIDR blocklist IP blocks |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_configure_waf",
+    "arguments": {
+      "project_id": "sample_project_id",
+      "action": "get",
+      "attack_mode": true,
+      "rate_limit_rps": 100,
+      "allowlist": [
+        "item_1",
+        "item_2"
+      ],
+      "blocklist": [
+        "item_1",
+        "item_2"
+      ]
+    }
+  },
+  "id": 13
+}
+```
+
+---
+
+### 14. `thanaton_configure_scaling`
+
+> **Description:** Inspect or configure Thanaton compute scaling: toggle between Serverless (scale-to-zero) and Always-On stateful execution, RAM allocation, and idle timeout.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `project_id` | `string` | ✅ Yes | - | Target project ID |
+| `action` | `string` | ✅ Yes | - | Action to perform ('get' or 'set') (Enum: `[get, set]`) |
+| `always_on` | `boolean` | ❌ No | - | Enable 24/7 Always-On stateful background execution (Indie/Pro) |
+| `idle_timeout_seconds` | `number` | ❌ No | - | Inactivity seconds before scaling to zero (min 15s) |
+| `memory_mb` | `number` | ❌ No | - | RAM allocation in MB (e.g. 256, 1024, 4096) |
+| `vcpu_count` | `number` | ❌ No | - | vCPU count (e.g. 1, 2, 4) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_configure_scaling",
+    "arguments": {
+      "project_id": "sample_project_id",
+      "action": "get",
+      "always_on": true,
+      "idle_timeout_seconds": 10000,
+      "memory_mb": 256,
+      "vcpu_count": 100
+    }
+  },
+  "id": 14
+}
+```
+
+---
+
+### 15. `thanaton_get_volumes`
+
+> **Description:** List persistent ext4 sparse volumes attached to a microVM sandbox for SQLite, PocketBase, or local file storage with scale-to-zero persistence.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ❌ No | - | MicroVM sandbox ID (default: sbx-default) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_get_volumes",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1"
+    }
+  },
+  "id": 15
+}
+```
+
+---
+
+### 16. `thanaton_attach_volume`
+
+> **Description:** Attach a persistent sparse ext4 volume mounted at /data with scale-to-zero snapshot persistence.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | MicroVM sandbox ID |
+| `mount_path` | `string` | ❌ No | - | Target mount path inside microVM (default: /data) |
+| `size_gb` | `number` | ❌ No | - | Virtual volume size in gigabytes (default: 10) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_attach_volume",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1",
+      "mount_path": "sample_mount_path",
+      "size_gb": 100
+    }
+  },
+  "id": 16
+}
+```
+
+---
+
+### 17. `thanaton_dual_probe`
+
+> **Description:** Adaptive Dual-Liveness Probe: Probes HTTP endpoint and automatically falls back to raw TCP 3-way handshake on guest port, eliminating silent false-positive deploy failures.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `target_host` | `string` | ❌ No | - | Target host IP or hostname (default: 127.0.0.1) |
+| `port` | `number` | ✅ Yes | - | Target port inside guest (e.g., 3000, 8080) |
+| `health_path` | `string` | ❌ No | - | Health check URL path (e.g., /health, /) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_dual_probe",
+    "arguments": {
+      "target_host": "sample_target_host",
+      "port": 8080,
+      "health_path": "sample_health_path"
+    }
+  },
+  "id": 17
+}
+```
+
+---
+
+### 18. `thanaton_inject_secrets`
+
+> **Description:** Zero-rebuild environment variable and secret injection via Firecracker MMDS in <50µs without rebuilding the SquashFS rootfs.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | MicroVM sandbox ID |
+| `secrets` | `object` | ✅ Yes | - | Key-value map of secrets and environment variables to inject |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_inject_secrets",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1",
+      "secrets": {
+        "key": "value"
       }
     }
-  }
+  },
+  "id": 18
 }
 ```
 
-*Or run directly via NPX:*
+---
+
+### 19. `thanaton_reap_extents`
+
+> **Description:** Autonomous CoW extent reaper: Reclaims unreferenced disk blocks and frees host RAM via process_madvise(MADV_DONTNEED).
+
+**Parameter Specification:**
+
+_No input parameters required._
+
+**Sample JSON-RPC Invocation:**
 ```json
 {
-  "mcpServers": {
-    "thanaton": {
-      "command": "npx",
-      "args": ["-y", "@thanaton/mcp-server"]
-    }
-  }
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_reap_extents",
+    "arguments": {}
+  },
+  "id": 19
 }
 ```
 
 ---
 
-### 2. Cursor IDE Setup
-In your workspace root, create or edit `.cursor/mcp.json`:
+### 20. `thanaton_pty_info`
 
+> **Description:** Get real-time bidirectional WebSocket PTY terminal gateway connection details for an attached interactive microVM shell.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | Target sandbox ID |
+
+**Sample JSON-RPC Invocation:**
 ```json
 {
-  "mcpServers": {
-    "thanaton": {
-      "command": "node",
-      "args": ["d:/MOHIT/testing-judge0-vm/mcp-server/dist/index.js"],
-      "env": {
-        "THANATON_API_URL": "http://127.0.0.1:8080"
-      }
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_pty_info",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1"
     }
-  }
+  },
+  "id": 20
 }
 ```
 
 ---
 
-### 3. Cline / Roo-Code Setup
-In VS Code `settings.json` under `cline.mcpServers`:
+### 21. `thanaton_expose_port`
 
+> **Description:** Allocate and expose a Layer 4 TCP wire forwarding port (antinat) from ephemeral host pool (12000-20000) for PostgreSQL, gRPC, or custom daemons.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | Target sandbox ID |
+| `guest_port` | `number` | ✅ Yes | - | Internal port inside microVM (e.g. 5432, 8080) |
+| `protocol` | `string` | ❌ No | `tcp` | Layer 4 transport protocol (Enum: `[tcp]`) |
+| `service_name` | `string` | ❌ No | `custom` | Descriptive service name (e.g. postgres, grpc) |
+
+**Sample JSON-RPC Invocation:**
 ```json
 {
-  "cline.mcpServers": {
-    "thanaton": {
-      "command": "node",
-      "args": ["d:/MOHIT/testing-judge0-vm/mcp-server/dist/index.js"]
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_expose_port",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1",
+      "guest_port": 8080,
+      "protocol": "tcp",
+      "service_name": "sample_service_name"
     }
-  }
+  },
+  "id": 21
 }
 ```
 
 ---
 
-### 4. Windsurf (Cascade) Setup
-In `~/.codeium/windsurf/mcp_config.json`:
+### 22. `thanaton_list_ports`
 
+> **Description:** List all active Layer 4 TCP port forwardings for a specific microVM sandbox.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | Target sandbox ID |
+
+**Sample JSON-RPC Invocation:**
 ```json
 {
-  "mcpServers": {
-    "thanaton": {
-      "command": "node",
-      "args": ["d:/MOHIT/testing-judge0-vm/mcp-server/dist/index.js"]
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_list_ports",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1"
     }
-  }
+  },
+  "id": 22
 }
 ```
 
 ---
 
-## 🔒 Security & Sandboxing Guarantees
+### 23. `thanaton_close_port`
 
-1. **Hardware KVM Boundary:** Every command runs inside a guest Linux kernel. Host memory and filesystem are completely inaccessible from the guest.
-2. **SSRF & Cloud Metadata Firewall:** The network namespace blocks all egress to `169.254.169.254` (cloud metadata service) and link-local ranges, preventing IAM token theft.
-3. **Pure Stdio Guard:** All internal logging is piped to `stderr`, guaranteeing standard output remains strictly formatted for JSON-RPC 2.0 frames.
-4. **Base64 Code Escaping:** Scripts are Base64 encoded before execution, preventing shell injection or command substitution exploits.
+> **Description:** Close an active Layer 4 TCP port forwarding and return the host port to the pool.
 
----
+**Parameter Specification:**
 
-## 🤖 Recommended System Prompt for AI Coding Agents
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | Target sandbox ID |
+| `host_port` | `number` | ✅ Yes | - | Allocated host port number to release |
 
-To ensure Claude or Cursor always uses Thanaton for running code, add this to your custom instructions:
-
-```markdown
-You have access to the Thanaton MCP Server tools (`thanaton_exec_command`, `thanaton_run_code`, `thanaton_spawn_sandbox`). 
-Whenever executing untrusted code, testing bash scripts, running unit tests, or querying databases:
-1. ALWAYS use `thanaton_run_code` or `thanaton_exec_command` instead of running directly on the local machine.
-2. For multi-step tasks requiring dependencies or database state, spawn a dedicated sandbox using `thanaton_spawn_sandbox`.
-3. Put dormant sandboxes to sleep with `thanaton_sleep_sandbox` to preserve resources.
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_close_port",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1",
+      "host_port": 8080
+    }
+  },
+  "id": 23
+}
 ```
 
 ---
 
-## 📄 License
+### 24. `thanaton_speculate_race`
 
-Apache-2.0 © Thanaton Architecture Team
+> **Description:** Execute multi-candidate speculative branch racing: runs N candidate code patches in parallel ephemeral microVMs, commits the fastest passing candidate, and instantly reaps losers.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `problem_id` | `string` | ❌ No | `default_problem` | Unique identifier for the task or problem |
+| `candidates` | `array` | ✅ Yes | - | List of candidate hypotheses/patches to race in parallel |
+| `timeout_ms` | `number` | ❌ No | `30000` | Maximum race timeout in milliseconds |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "thanaton_speculate_race",
+    "arguments": {
+      "problem_id": "sample_problem_id",
+      "candidates": [
+        "item_1",
+        "item_2"
+      ],
+      "timeout_ms": 10000
+    }
+  },
+  "id": 24
+}
+```
+
+---
+
+## MNEMON-DB • Zero-Copy Isolated Database Engine & Branching
+
+Contains **14 production tools** specifically designed for agent autonomy.
+
+### 25. `mnemon_list_tenants`
+
+> **Description:** List active PostgreSQL database tenants, clusters, and copy-on-write branches with replication and fork telemetry.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ❌ No | - | Optional tenant filter |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_list_tenants",
+    "arguments": {
+      "tenant_id": "org_production"
+    }
+  },
+  "id": 25
+}
+```
+
+---
+
+### 26. `mnemon_create_branch`
+
+> **Description:** Fork an instant copy-on-write PostgreSQL database branch in 31ms at an exact WAL LSN without storage duplication.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant/cluster identifier |
+| `new_branch` | `string` | ✅ Yes | - | Name for the new branch (e.g. 'feature-migration') |
+| `parent_branch` | `string` | ❌ No | - | Parent branch name (default: 'main') |
+| `target_lsn` | `number` | ❌ No | - | Optional WAL LSN for point-in-time fork |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_create_branch",
+    "arguments": {
+      "tenant_id": "org_production",
+      "new_branch": "preview_experiment_branch",
+      "parent_branch": "preview_experiment_branch",
+      "target_lsn": 100
+    }
+  },
+  "id": 26
+}
+```
+
+---
+
+### 27. `mnemon_promote_branch`
+
+> **Description:** Promote a preview/ephemeral database branch to primary production root with atomic zero-downtime pointer swap.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+| `branch_id` | `string` | ✅ Yes | - | Branch ID to promote to primary root |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_promote_branch",
+    "arguments": {
+      "tenant_id": "org_production",
+      "branch_id": "preview_experiment_branch"
+    }
+  },
+  "id": 27
+}
+```
+
+---
+
+### 28. `mnemon_reset_branch`
+
+> **Description:** Reset an ephemeral database branch back to its parent snapshot in <50ms, wiping all test mutations.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+| `branch_id` | `string` | ✅ Yes | - | Branch ID to reset |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_reset_branch",
+    "arguments": {
+      "tenant_id": "org_production",
+      "branch_id": "preview_experiment_branch"
+    }
+  },
+  "id": 28
+}
+```
+
+---
+
+### 29. `mnemon_diff_branch`
+
+> **Description:** Inspect SQL DDL schema diff and migration script between a branch and its parent.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+| `branch_id` | `string` | ✅ Yes | - | Branch ID to diff |
+| `parent_branch` | `string` | ❌ No | - | Parent branch (default: 'main') |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_diff_branch",
+    "arguments": {
+      "tenant_id": "org_production",
+      "branch_id": "preview_experiment_branch",
+      "parent_branch": "preview_experiment_branch"
+    }
+  },
+  "id": 29
+}
+```
+
+---
+
+### 30. `mnemon_execute_sql`
+
+> **Description:** Execute raw SQL query directly on a tenant database cluster or branch.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+| `query` | `string` | ✅ Yes | - | SQL query statement to execute |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_execute_sql",
+    "arguments": {
+      "tenant_id": "org_production",
+      "query": "sample_query"
+    }
+  },
+  "id": 30
+}
+```
+
+---
+
+### 31. `mnemon_get_schema`
+
+> **Description:** Introspect database schema tables, column types, and primary key constraints.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_get_schema",
+    "arguments": {
+      "tenant_id": "org_production"
+    }
+  },
+  "id": 31
+}
+```
+
+---
+
+### 32. `mnemon_configure_scaling`
+
+> **Description:** Configure Aurora Serverless v2 / Neon ACU scaling limits (min ACU, max ACU, scale-to-zero timeout).
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+| `min_acu` | `number` | ❌ No | - | Minimum ACU capacity (e.g. 0.0 for scale-to-zero) |
+| `max_acu` | `number` | ❌ No | - | Maximum ACU capacity (e.g. 16.0 or 128.0) |
+| `idle_timeout_sec` | `number` | ❌ No | - | Inactivity seconds before scaling to zero (default: 300) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_configure_scaling",
+    "arguments": {
+      "tenant_id": "org_production",
+      "min_acu": 100,
+      "max_acu": 100,
+      "idle_timeout_sec": 10000
+    }
+  },
+  "id": 32
+}
+```
+
+---
+
+### 33. `mnemon_configure_pooler`
+
+> **Description:** Inspect or configure PgBouncer connection pooling mode and max connection limits.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+| `pool_mode` | `string` | ❌ No | - | Pooling mode (Enum: `[transaction, session]`) |
+| `max_pool_size` | `number` | ❌ No | - | Maximum pooled backend connections |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_configure_pooler",
+    "arguments": {
+      "tenant_id": "org_production",
+      "pool_mode": "transaction",
+      "max_pool_size": 100
+    }
+  },
+  "id": 33
+}
+```
+
+---
+
+### 34. `mnemon_manage_extensions`
+
+> **Description:** Manage 1-click PostgreSQL extensions (vector, pg_search, postgis, uuid-ossp).
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+| `action` | `string` | ✅ Yes | - | Action to perform (Enum: `[list, enable, disable]`) |
+| `name` | `string` | ❌ No | - | Extension name (for enable/disable) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_manage_extensions",
+    "arguments": {
+      "tenant_id": "org_production",
+      "action": "list",
+      "name": "sample_name"
+    }
+  },
+  "id": 34
+}
+```
+
+---
+
+### 35. `mnemon_get_slow_queries`
+
+> **Description:** Inspect slow query execution diagnostics, call frequencies, and buffer cache hit rates.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_get_slow_queries",
+    "arguments": {
+      "tenant_id": "org_production"
+    }
+  },
+  "id": 35
+}
+```
+
+---
+
+### 36. `mnemon_clone_vector`
+
+> **Description:** Sub-35ms pgvector HNSW index clone: Duplicates vector index graphs across branches using XFS/Btrfs zero-copy reflink extents.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `project_id` | `string` | ✅ Yes | - | Mnemon project / tenant ID |
+| `branch` | `string` | ✅ Yes | - | Branch name to clone index from |
+| `index_name` | `string` | ✅ Yes | - | pgvector HNSW index name |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_clone_vector",
+    "arguments": {
+      "project_id": "sample_project_id",
+      "branch": "preview_experiment_branch",
+      "index_name": "sample_index_name"
+    }
+  },
+  "id": 36
+}
+```
+
+---
+
+### 37. `mnemon_autofreeze_policy`
+
+> **Description:** Configure automatic zero-CPU instance freezing via cgroups v2 (cgroup.freeze) while keeping PostgreSQL shared buffer pool in RAM.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `project_id` | `string` | ✅ Yes | - | Mnemon project / tenant ID |
+| `idle_timeout_seconds` | `number` | ❌ No | - | Inactivity seconds before auto-freezing (default: 30) |
+| `preserve_buffer_pool` | `boolean` | ❌ No | - | Preserve shared buffers in RAM (default: true) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_autofreeze_policy",
+    "arguments": {
+      "project_id": "sample_project_id",
+      "idle_timeout_seconds": 10000,
+      "preserve_buffer_pool": true
+    }
+  },
+  "id": 37
+}
+```
+
+---
+
+### 38. `mnemon_wal_rewind`
+
+> **Description:** 31ms Point-in-Time Recovery & WAL rewind: forks an isolated zero-copy CoW PostgreSQL branch from an arbitrary historical timestamp or LSN.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ❌ No | - | Optional sandbox ID to rewind |
+| `project_id` | `string` | ❌ No | - | Optional project ID |
+| `target_time` | `string` | ❌ No | - | Target ISO-8601 UTC timestamp to rewind to |
+| `target_lsn` | `string` | ❌ No | - | Target PostgreSQL WAL LSN position |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "mnemon_wal_rewind",
+    "arguments": {
+      "sandbox_id": "sbx-kvm-9f82d1",
+      "project_id": "sample_project_id",
+      "target_time": "sample_target_time",
+      "target_lsn": "sample_target_lsn"
+    }
+  },
+  "id": 38
+}
+```
+
+---
+
+## ESCHATON & NEPHIS • Autonomous Polyglot Code Execution & Fast-Batch
+
+Contains **3 production tools** specifically designed for agent autonomy.
+
+### 39. `eschaton_preflight_check`
+
+> **Description:** In-memory AST syntax and hazard detection (<50µs): Detects infinite loops, fork bombs, and banned syscalls before microVM dispatch.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `code` | `string` | ✅ Yes | - | Source code to analyze |
+| `language` | `string` | ✅ Yes | - | Programming language (python, javascript, c, cpp, bash, go) |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "eschaton_preflight_check",
+    "arguments": {
+      "code": "print('Executed safely via Nephis')",
+      "language": "sample_language"
+    }
+  },
+  "id": 39
+}
+```
+
+---
+
+### 40. `nephis_fast_batch`
+
+> **Description:** 50-Testcase Parallel Fast-Batch: Dispatches up to 50 testcases in a single HTTP request to evaluate concurrently in 38ms parallel memory.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `language_id` | `number` | ❌ No | `54` | Language ID (e.g. 54 for Python, 63 for JavaScript, 71 for Python 3) |
+| `source_code` | `string` | ✅ Yes | - | Source code to evaluate against tests |
+| `tests` | `array` | ❌ No | - | List of up to 50 testcases with stdin and expected_output |
+| `submissions` | `array` | ❌ No | - | Alternative batch submissions format for backward compatibility |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "nephis_fast_batch",
+    "arguments": {
+      "language_id": 100,
+      "source_code": "print('Executed safely via Nephis')",
+      "tests": [
+        "item_1",
+        "item_2"
+      ],
+      "submissions": [
+        "item_1",
+        "item_2"
+      ]
+    }
+  },
+  "id": 40
+}
+```
+
+---
+
+### 41. `eschaton_fast_batch`
+
+> **Description:** Parallel early-exit batch matrix execution: Runs test matrices across submissions concurrently with sub-millisecond short-circuiting on failure.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `language_id` | `number` | ❌ No | `54` |  |
+| `source_code` | `string` | ❌ No | - |  |
+| `tests` | `array` | ❌ No | - |  |
+| `submissions` | `array` | ❌ No | - | List of code submissions to evaluate |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "eschaton_fast_batch",
+    "arguments": {
+      "language_id": 100,
+      "source_code": "print('Executed safely via Nephis')",
+      "tests": [
+        "item_1",
+        "item_2"
+      ],
+      "submissions": [
+        "item_1",
+        "item_2"
+      ]
+    }
+  },
+  "id": 41
+}
+```
+
+---
+
+## ANANKE SYSTEMS • Kernel Infrastructure, FinOps & Reliability
+
+Contains **12 production tools** specifically designed for agent autonomy.
+
+### 42. `ananke_license_check`
+
+> **Description:** Check active tenant license tier, entitlements, and quota limits.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `token` | `string` | ❌ No | - | Optional license token to inspect |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_license_check",
+    "arguments": {
+      "token": "sample_token"
+    }
+  },
+  "id": 42
+}
+```
+
+---
+
+### 43. `ananke_license_generate`
+
+> **Description:** Generate a cryptographically signed Ananke commercial license token.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Target tenant identifier |
+| `tier` | `string` | ❌ No | `pro` |  (Enum: `[community, pro, enterprise]`) |
+| `days` | `number` | ❌ No | `365` |  |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_license_generate",
+    "arguments": {
+      "tenant_id": "org_production",
+      "tier": "community",
+      "days": 100
+    }
+  },
+  "id": 43
+}
+```
+
+---
+
+### 44. `ananke_cdc_inspect`
+
+> **Description:** Inspect schema, row count, and records of a Walquet PostgreSQL CDC Parquet file.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `file_path` | `string` | ✅ Yes | - | Absolute path to .parquet file |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_cdc_inspect",
+    "arguments": {
+      "file_path": "sample_file_path"
+    }
+  },
+  "id": 44
+}
+```
+
+---
+
+### 45. `ananke_webhook_dispatch`
+
+> **Description:** Dispatch an outbound webhook with anti-SSRF firewall validation and HMAC-SHA256 signature.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `url` | `string` | ✅ Yes | - | Destination webhook URL |
+| `payload` | `string` | ✅ Yes | - | JSON payload string |
+| `secret` | `string` | ❌ No | `webhook_secret` |  |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_webhook_dispatch",
+    "arguments": {
+      "url": "sample_url",
+      "payload": "sample_payload",
+      "secret": "sample_secret"
+    }
+  },
+  "id": 45
+}
+```
+
+---
+
+### 46. `ananke_finops_scan`
+
+> **Description:** Scan AWS cloud infrastructure for orphaned EBS volumes, idle NATs, and unattached EIPs.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `regions` | `string` | ❌ No | `us-east-1` | Comma-separated target AWS regions to audit |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_finops_scan",
+    "arguments": {
+      "regions": "sample_regions"
+    }
+  },
+  "id": 46
+}
+```
+
+---
+
+### 47. `ananke_flight_record_inspect`
+
+> **Description:** Inspect a Tombstone pre-OOM crash autopsy file.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `file_path` | `string` | ✅ Yes | - | Path to tombstone autopsy JSON |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_flight_record_inspect",
+    "arguments": {
+      "file_path": "sample_file_path"
+    }
+  },
+  "id": 47
+}
+```
+
+---
+
+### 48. `ananke_chaos_simulate`
+
+> **Description:** Run a deterministic discrete pseudo-time chaos simulation with Raft consensus.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `seed` | `number` | ❌ No | `1337` | Random seed for reproducible chaos schedule |
+| `drop_rate` | `number` | ❌ No | `0.15` | Network packet drop probability (0.0 - 1.0) |
+| `dup_rate` | `number` | ❌ No | `0.05` | Packet duplication probability (0.0 - 1.0) |
+| `steps` | `number` | ❌ No | `30` | Number of discrete state machine simulation steps |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_chaos_simulate",
+    "arguments": {
+      "seed": 100,
+      "drop_rate": 100,
+      "dup_rate": 100,
+      "steps": 100
+    }
+  },
+  "id": 48
+}
+```
+
+---
+
+### 49. `ananke_pool_probe`
+
+> **Description:** Probe host kernel eBPF sockmap, BPF JIT, and client-side database pooling capabilities.
+
+**Parameter Specification:**
+
+_No input parameters required._
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_pool_probe",
+    "arguments": {}
+  },
+  "id": 49
+}
+```
+
+---
+
+### 50. `ananke_storage_pipe_bench`
+
+> **Description:** Benchmark zero-copy S3 streaming pipe throughput and memory bounds.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `size_mb` | `number` | ❌ No | `20` | Synthetic test payload size in megabytes |
+| `part_size_mb` | `number` | ❌ No | `5` | Multipart chunk size in megabytes |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_storage_pipe_bench",
+    "arguments": {
+      "size_mb": 100,
+      "part_size_mb": 100
+    }
+  },
+  "id": 50
+}
+```
+
+---
+
+### 51. `ananke_rootfs_build_manifest`
+
+> **Description:** Build chunked block streaming manifest from a container image or rootfs file.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `source_path` | `string` | ✅ Yes | - | Source rootfs image path |
+| `output_path` | `string` | ❌ No | `manifest.json` | Destination path for generated JSON manifest |
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_rootfs_build_manifest",
+    "arguments": {
+      "source_path": "sample_source_path",
+      "output_path": "sample_output_path"
+    }
+  },
+  "id": 51
+}
+```
+
+---
+
+### 52. `ananke_dns_probe`
+
+> **Description:** Inspect host eBPF XDP network frame interception and driver capabilities.
+
+**Parameter Specification:**
+
+_No input parameters required._
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_dns_probe",
+    "arguments": {}
+  },
+  "id": 52
+}
+```
+
+---
+
+### 53. `ananke_socket_migrate_demo`
+
+> **Description:** Execute active live TCP socket migration demonstration preserving sequence state.
+
+**Parameter Specification:**
+
+_No input parameters required._
+
+**Sample JSON-RPC Invocation:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "tools/call",
+  "params": {
+    "name": "ananke_socket_migrate_demo",
+    "arguments": {}
+  },
+  "id": 53
+}
+```
+
+---
+
+---
+
+## 💻 Developer SDKs & Native Command-Line Tools (CLI)
+
+Beyond the Model Context Protocol (MCP) JSON-RPC transport, NEPHIS provides first-class native command-line interfaces and client SDKs for automated terminal scripting, CI/CD test automation, and full-stack application development.
+
+### 1. Thanaton MicroVM CLI (`thanaton`)
+Available as a zero-dependency CLI wrapper (`sdk/cli/thanaton.bat` on Windows or `thanaton` on Linux):
+
+```bash
+# Provision a sub-6ms hardware KVM MicroVM (512MB RAM, attached Postgres DB)
+thanaton spawn --runtime microvm --memory 512 --with-db
+
+# Execute arbitrary bash / terminal commands inside the isolated sandbox
+thanaton exec sbx-kvm-9f82d1 "npm test"
+
+# Put sandbox into compressed stasis (Scale-to-Zero, $0 RAM burn)
+thanaton stasis sbx-kvm-9f82d1
+
+# Instant hardware cold-wake from stasis (Sub-6ms SLA)
+thanaton wake sbx-kvm-9f82d1
+
+# Expose a local MicroVM port for live browser preview (e.g. Next.js on port 3000)
+thanaton port expose sbx-kvm-9f82d1 3000
+```
+
+### 2. Mnemon-DB Serverless PostgreSQL CLI (`mnemon`)
+Available as a native CLI tool (`sdk/cli/mnemon.bat` on Windows or `mnemon` on Linux):
+
+```bash
+# Instant zero-copy snapshot branch creation via Linux XFS reflink blocks (<30ms)
+mnemon branch create feat-user-auth --from main
+
+# Execute raw SQL directly against the branch sandbox
+mnemon sql --branch feat-user-auth "SELECT COUNT(*) FROM users WHERE is_active = true;"
+
+# Structural schema and data delta comparison between branches
+mnemon branch diff main feat-user-auth
+
+# Point-in-Time WAL rewind to an exact PostgreSQL Log Sequence Number (LSN)
+mnemon rewind --branch feat-user-auth --lsn 0/16B38D8
+
+# Promote verified staging branch to production zero-downtime
+mnemon branch promote feat-user-auth --target main
+```
+
+### 3. Eschaton Code Execution CLI (`eschatonctl`)
+High-throughput compiler and parallel testcase runner (`scripts/eschatonctl.py`):
+
+```bash
+# Single execution with instant in-memory microkernel (<3.4ms)
+eschatonctl run solution.cpp --lang 54 --stdin input.txt
+
+# Run 50 parallel testcases simultaneously in 38.2ms (Apex Fan-Out)
+eschatonctl batch --source solution.cpp --testcases ./tests/ --parallel 50
+
+# Ultra-fast (12µs) in-memory AST hazard detection (fork bombs, infinite loops)
+eschatonctl preflight untrusted_script.py
+```
+
+### 4. Official Python SDK (`nephis-sdk`)
+
+```python
+from nephis import NephisClient
+
+# Authenticate with your API key or rely on auto-bootstrapped credentials
+client = NephisClient(api_key="mrd_live_...")
+
+# 1. Thanaton: Spawn a sub-6ms MicroVM
+sandbox = client.thanaton.spawn(runtime="microvm", memory_mb=512)
+result = sandbox.exec("python3 -c 'print(42)'")
+print(result.stdout)  # 42
+sandbox.sleep()  # Scale-to-zero stasis ($0 ongoing cost)
+
+# 2. Mnemon-DB: Zero-copy PostgreSQL 16 branch in 30ms
+branch = client.mnemon.create_branch("ai-agent-staging", parent="main")
+db_rows = branch.query("SELECT id, email FROM tenants LIMIT 5;")
+
+# 3. Eschaton: Sub-38ms batch code execution
+run = client.eschaton.execute(
+    language_id=54,  # C++
+    source_code='#include <iostream>\nint main() { std::cout << "Done"; return 0; }'
+)
+print(f"Executed in {run.time}s with memory {run.memory}KB")
+```
+
+### 5. Official Node.js / TypeScript SDK (`@nephis/sdk`)
+
+```typescript
+import { NephisClient } from '@nephis/sdk';
+
+const nephis = new NephisClient({
+  apiKey: process.env.NEPHIS_API_KEY,
+  baseUrl: 'https://nephis.theeducode.com',
+});
+
+// Launch an isolated microVM and execute command
+const sbx = await nephis.thanaton.spawnSandbox({ runtime: 'microvm', memoryMb: 1024 });
+const exec = await nephis.thanaton.execCommand(sbx.id, 'uname -a');
+console.log('Sandbox Kernel:', exec.stdout);
+
+// Create zero-copy database branch in 30ms
+const branch = await nephis.mnemon.createBranch({
+  branchName: 'pr-142',
+  parentBranch: 'main'
+});
+console.log('Branch Ready:', branch.connection_string);
+```
+
+## 👤 Creator & Engineering Attribution
+
+* **Creator & Principal Systems Architect:** Mohit Raj Deo
+* **Portfolio & Personal Site:** [https://mohitrajdeo.in](https://mohitrajdeo.in)
+* **GitHub:** [https://github.com/mohitrajdeo](https://github.com/mohitrajdeo)
+* **LinkedIn:** [https://www.linkedin.com/in/mohitrajdeo/](https://www.linkedin.com/in/mohitrajdeo/)
+* **Contact:** [mohit@mohitrajdeo.in](mailto:mohit@mohitrajdeo.in)
+* **Organization:** NEPHIS / Eduniketan Private Limited

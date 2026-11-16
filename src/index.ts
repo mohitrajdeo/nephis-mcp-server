@@ -11,6 +11,10 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
+import * as crypto from "node:crypto";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 import {
   LicenseToken,
   LicenseAuthority,
@@ -20,7 +24,107 @@ import {
 } from "./license.js";
 
 const THANATON_API_URL = process.env.NEPHIS_BASE_URL || process.env.NEPHIS_API_URL || process.env.THANATON_API_URL || process.env.CIEL_BASE_URL || "https://nephis.theeducode.com";
-const THANATON_API_KEY = process.env.NEPHIS_API_KEY || process.env.THANATON_API_KEY || "";
+let cachedApiKey = process.env.NEPHIS_API_KEY || process.env.THANATON_API_KEY || process.env.CIEL_API_KEY || "";
+
+function getMachineSignature(): string {
+  const hostname = os.hostname();
+  const ifaces = Object.values(os.networkInterfaces()).flat().filter(Boolean);
+  const mac = ifaces.find((i) => i && i.mac && i.mac !== "00:00:00:00:00:00")?.mac || "00:00:00:00:00:00";
+  const platform = `${os.platform()}-${os.arch()}-${os.release()}`;
+  return crypto.createHash("sha256").update(`${hostname}:${mac}:${platform}`).digest("hex");
+}
+
+function solvePoW(challengeNonce: string, machineSignature: string, difficulty = 4): string {
+  const prefix = "0".repeat(difficulty);
+  for (let i = 0; i < 2000000; i++) {
+    const sol = i.toString();
+    const hash = crypto.createHash("sha256").update(`${challengeNonce}${machineSignature}${sol}`).digest("hex");
+    if (hash.startsWith(prefix)) {
+      return sol;
+    }
+  }
+  throw new Error("Failed to solve Proof-of-Work challenge within threshold");
+}
+
+async function getOrBootstrapApiKey(): Promise<string> {
+  if (cachedApiKey) return cachedApiKey;
+
+  const credsDir = path.join(os.homedir(), ".nephis");
+  const credsFile = path.join(credsDir, "credentials.json");
+
+  // 1. Read existing cached credentials
+  if (fs.existsSync(credsFile)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(credsFile, "utf-8"));
+      if (data && data.api_key) {
+        cachedApiKey = data.api_key;
+        return cachedApiKey;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2. Perform zero-human PoW handshake
+  try {
+    const sig = getMachineSignature();
+    const chRes = await fetch(`${THANATON_API_URL}/v1/auth/challenge`, {
+      headers: { Accept: "application/json" },
+    });
+    if (chRes.ok) {
+      const chData: any = await chRes.json();
+      const nonce = chData.nonce;
+      const diff = chData.difficulty || 4;
+      const sol = solvePoW(nonce, sig, diff);
+
+      const claimRes = await fetch(`${THANATON_API_URL}/v1/auth/claim-agent-key`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          challenge_nonce: nonce,
+          solution_nonce: sol,
+          machine_signature: sig,
+          client_version: "1.0.0",
+        }),
+      });
+
+      if (claimRes.ok) {
+        const claimData: any = await claimRes.json();
+        if (claimData.api_key) {
+          cachedApiKey = claimData.api_key;
+          try {
+            if (!fs.existsSync(credsDir)) {
+              fs.mkdirSync(credsDir, { recursive: true });
+            }
+            fs.writeFileSync(
+              credsFile,
+              JSON.stringify(
+                {
+                  api_key: cachedApiKey,
+                  tenant_id: claimData.tenant_id,
+                  credits: claimData.credits,
+                  machine_signature: sig,
+                  base_url: THANATON_API_URL,
+                  bootstrapped_at: new Date().toISOString(),
+                },
+                null,
+                2
+              ),
+              "utf-8"
+            );
+          } catch {
+            // non-fatal write error
+          }
+          return cachedApiKey;
+        }
+      }
+    }
+  } catch (err: any) {
+    console.error(`[NEPHIS MCP] Warning: Agent key self-bootstrap handshake skipped: ${err.message}`);
+  }
+
+  return "";
+}
 
 // Guard: Route console.log to stderr to ensure MCP JSON-RPC messages on stdout are never corrupted
 console.log = (...args: any[]) => {
@@ -47,8 +151,10 @@ async function callThanatonApi(endpoint: string, options: RequestInit = {}): Pro
     ...(options.headers as Record<string, string>),
   };
 
-  if (THANATON_API_KEY) {
-    headers["Authorization"] = `Bearer ${THANATON_API_KEY}`;
+  const apiKey = await getOrBootstrapApiKey();
+  if (apiKey) {
+    headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["X-API-Key"] = apiKey;
   }
 
   try {
