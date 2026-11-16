@@ -15,7 +15,7 @@ export interface LicenseStatus {
   expires_at?: number | null;
 }
 
-export const DEFAULT_LICENSE_SECRET = "ananke_enterprise_signing_secret_prod_2026";
+export const DEFAULT_LICENSE_SECRET = "nephis_enterprise_signing_secret_prod_2026";
 
 export interface TierEntitlements {
   max_sandboxes: number;

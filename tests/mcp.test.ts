@@ -97,18 +97,18 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(toolNames.includes("thanaton_destroy_sandbox"));
 
     // Nephis enterprise tools
-    assert.ok(toolNames.includes("ananke_license_check"));
-    assert.ok(toolNames.includes("ananke_license_generate"));
-    assert.ok(toolNames.includes("ananke_cdc_inspect"));
-    assert.ok(toolNames.includes("ananke_webhook_dispatch"));
-    assert.ok(toolNames.includes("ananke_finops_scan"));
-    assert.ok(toolNames.includes("ananke_flight_record_inspect"));
-    assert.ok(toolNames.includes("ananke_chaos_simulate"));
-    assert.ok(toolNames.includes("ananke_pool_probe"));
-    assert.ok(toolNames.includes("ananke_storage_pipe_bench"));
-    assert.ok(toolNames.includes("ananke_rootfs_build_manifest"));
-    assert.ok(toolNames.includes("ananke_dns_probe"));
-    assert.ok(toolNames.includes("ananke_socket_migrate_demo"));
+    assert.ok(toolNames.includes("nephis_license_check"));
+    assert.ok(toolNames.includes("nephis_license_generate"));
+    assert.ok(toolNames.includes("nephis_cdc_inspect"));
+    assert.ok(toolNames.includes("nephis_webhook_dispatch"));
+    assert.ok(toolNames.includes("nephis_finops_scan"));
+    assert.ok(toolNames.includes("nephis_flight_record_inspect"));
+    assert.ok(toolNames.includes("nephis_chaos_simulate"));
+    assert.ok(toolNames.includes("nephis_pool_probe"));
+    assert.ok(toolNames.includes("nephis_storage_pipe_bench"));
+    assert.ok(toolNames.includes("nephis_rootfs_build_manifest"));
+    assert.ok(toolNames.includes("nephis_dns_probe"));
+    assert.ok(toolNames.includes("nephis_socket_migrate_demo"));
     // Thanaton project & infra tools
     assert.ok(toolNames.includes("thanaton_list_projects"));
     assert.ok(toolNames.includes("thanaton_create_project"));
@@ -282,10 +282,10 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.equal(data.status, "destroyed");
   });
 
-  it("should dispatch webhooks and block SSRF via ananke_webhook_dispatch", async () => {
+  it("should dispatch webhooks and block SSRF via nephis_webhook_dispatch", async () => {
     // Valid external webhook
     const validRes = await sendRpc("tools/call", {
-      name: "ananke_webhook_dispatch",
+      name: "nephis_webhook_dispatch",
       arguments: {
         url: "https://api.example.com/webhook",
         payload: JSON.stringify({ event: "sandbox.ready" }),
@@ -298,7 +298,7 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
 
     // SSRF attempt against internal loopback
     const ssrfRes = await sendRpc("tools/call", {
-      name: "ananke_webhook_dispatch",
+      name: "nephis_webhook_dispatch",
       arguments: {
         url: "http://127.0.0.1:8080/internal",
         payload: "{}",
@@ -309,9 +309,9 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(ssrfRes.result.content[0].text.includes("SSRF Blocked"));
   });
 
-  it("should run infrastructure FinOps scan via ananke_finops_scan", async () => {
+  it("should run infrastructure FinOps scan via nephis_finops_scan", async () => {
     const res = await sendRpc("tools/call", {
-      name: "ananke_finops_scan",
+      name: "nephis_finops_scan",
       arguments: {
         regions: "us-east-1",
       },

@@ -36,7 +36,6 @@ from nephis.auth import resolve_base_url, resolve_api_key
 
 NEPHIS_URL = resolve_base_url()
 CIEL_URL = NEPHIS_URL
-ANANKE_URL = NEPHIS_URL
 
 
 def get_current_api_key():
@@ -877,22 +876,22 @@ def handle_request(req):
         
     elif method == "tools/call":
         raw_tool_name = params.get("name", "")
-        # Normalize tool name so nephis_*, ciel_*, and ananke_* prefixes work seamlessly
+        # Normalize tool name so nephis_*, ciel_*, and nephis_* prefixes work seamlessly
         tool_name = raw_tool_name
-        for prefix in ("nephis_", "ciel_", "ananke_"):
+        for prefix in ("nephis_", "ciel_", "nephis_"):
             if tool_name.startswith(prefix):
-                tool_name = "ananke_" + tool_name[len(prefix):]
+                tool_name = "nephis_" + tool_name[len(prefix):]
                 break
         else:
-            if not tool_name.startswith("ananke_"):
-                tool_name = "ananke_" + tool_name
+            if not tool_name.startswith("nephis_"):
+                tool_name = "nephis_" + tool_name
 
         args = params.get("arguments", {})
         client = get_client()
         
         try:
             # 1. Sandboxes
-            if tool_name == "ananke_create_sandbox":
+            if tool_name == "nephis_create_sandbox":
                 res = api_call("POST", "/v1/sandboxes", {
                     "runtime": args.get("runtime", "microvm"),
                     "memory_mb": args.get("memory_mb", 128),
@@ -908,7 +907,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_run_code":
+            elif tool_name == "nephis_run_code":
                 code = args.get("code", "")
                 lang = args.get("language", "python")
                 stdin = args.get("stdin", "")
@@ -957,7 +956,7 @@ def handle_request(req):
                         }
                     }
 
-            elif tool_name in ("ananke_fast_batch", "ananke_submissions_fast_batch", "ananke_eschaton_fast_batch"):
+            elif tool_name in ("nephis_fast_batch", "nephis_submissions_fast_batch", "nephis_eschaton_fast_batch"):
                 lang_id = args.get("language_id", 54)
                 code = args.get("source_code", "")
                 tests = args.get("tests", [])
@@ -1016,7 +1015,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_submit_judge0":
+            elif tool_name == "nephis_submit_judge0":
                 sub_res = api_call("POST", "/submissions?wait=true", {
                     "source_code": args.get("source_code", ""),
                     "language_id": args.get("language_id", 71),
@@ -1036,7 +1035,7 @@ def handle_request(req):
                     }
                 }
                 
-            elif tool_name == "ananke_exec_command":
+            elif tool_name == "nephis_exec_command":
                 sbx_id = args.get("sandbox_id")
                 cmd = args.get("command")
                 res = api_call("POST", f"/v1/sandboxes/{sbx_id}/exec", {
@@ -1053,7 +1052,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_speculate":
+            elif tool_name == "nephis_speculate":
                 candidates = args.get("candidates", [])
                 test_cmd = args.get("test_command", "pytest")
                 repo = args.get("repo")
@@ -1080,7 +1079,7 @@ def handle_request(req):
                     }
                 }
                 
-            elif tool_name == "ananke_read_file":
+            elif tool_name == "nephis_read_file":
                 sbx_id = args.get("sandbox_id")
                 path = args.get("path")
                 import urllib.parse
@@ -1095,7 +1094,7 @@ def handle_request(req):
                     }
                 }
                 
-            elif tool_name == "ananke_write_file":
+            elif tool_name == "nephis_write_file":
                 sbx_id = args.get("sandbox_id")
                 path = args.get("path")
                 content = args.get("content")
@@ -1112,7 +1111,7 @@ def handle_request(req):
                     }
                 }
                 
-            elif tool_name == "ananke_destroy_sandbox":
+            elif tool_name == "nephis_destroy_sandbox":
                 sbx_id = args.get("sandbox_id")
                 res = api_call("DELETE", f"/v1/sandboxes/{sbx_id}")
                 return {
@@ -1125,7 +1124,7 @@ def handle_request(req):
                 }
 
             # 2. License Authority
-            elif tool_name == "ananke_license_check":
+            elif tool_name == "nephis_license_check":
                 token = args.get("token") or os.environ.get("NEPHIS_LICENSE_KEY")
                 auth = LicenseAuthority(token)
                 return {
@@ -1137,7 +1136,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_license_generate":
+            elif tool_name == "nephis_license_generate":
                 lic = LicenseToken(tenant_id=args.get("tenant_id"), tier=args.get("tier", "pro"), expires_in_days=args.get("days", 365))
                 token_str = lic.generate()
                 return {
@@ -1151,7 +1150,7 @@ def handle_request(req):
                 }
 
             # 3. Nephis Series Engines
-            elif tool_name == "ananke_cdc_inspect":
+            elif tool_name == "nephis_cdc_inspect":
                 res = client.cdc.inspect_parquet(args.get("file_path"))
                 return {
                     "jsonrpc": "2.0",
@@ -1162,7 +1161,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_webhook_dispatch":
+            elif tool_name == "nephis_webhook_dispatch":
                 res = client.webhooks.send(
                     url=args.get("url"),
                     payload=args.get("payload"),
@@ -1177,7 +1176,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_finops_scan":
+            elif tool_name == "nephis_finops_scan":
                 res = client.finops.scan(regions=args.get("regions", "us-east-1"), dry_run=True)
                 return {
                     "jsonrpc": "2.0",
@@ -1188,7 +1187,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_flight_record_inspect":
+            elif tool_name == "nephis_flight_record_inspect":
                 res = client.diagnostics.inspect(args.get("file_path"))
                 return {
                     "jsonrpc": "2.0",
@@ -1199,7 +1198,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_chaos_simulate":
+            elif tool_name == "nephis_chaos_simulate":
                 res = client.chaos.run_simulation(
                     seed=args.get("seed", 1337),
                     drop_rate=args.get("drop_rate", 0.15),
@@ -1215,7 +1214,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_pool_probe":
+            elif tool_name == "nephis_pool_probe":
                 res = client.pool.probe()
                 return {
                     "jsonrpc": "2.0",
@@ -1226,7 +1225,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_storage_pipe_bench":
+            elif tool_name == "nephis_storage_pipe_bench":
                 res = client.storage_pipe.benchmark(
                     size_mb=args.get("size_mb", 20),
                     part_size_mb=args.get("part_size_mb", 5)
@@ -1240,7 +1239,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_rootfs_build_manifest":
+            elif tool_name == "nephis_rootfs_build_manifest":
                 res = client.rootfs.build_manifest(
                     source_path=args.get("source_path"),
                     output_path=args.get("output_path", "manifest.json")
@@ -1254,7 +1253,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_dns_probe":
+            elif tool_name == "nephis_dns_probe":
                 res = client.dns.probe()
                 return {
                     "jsonrpc": "2.0",
@@ -1265,7 +1264,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_socket_migrate_demo":
+            elif tool_name == "nephis_socket_migrate_demo":
                 res = client.migration.run_demo()
                 return {
                     "jsonrpc": "2.0",
@@ -1276,7 +1275,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_bastion_generate_token":
+            elif tool_name == "nephis_bastion_generate_token":
                 res = client.bastion.generate_token(
                     tenant_id=args.get("tenant_id"),
                     username=args.get("username"),
@@ -1291,7 +1290,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_pki_issue_cert":
+            elif tool_name == "nephis_pki_issue_cert":
                 res = client.pki.issue_certificate(
                     domain=args.get("domain"),
                     days=args.get("days", 90)
@@ -1305,7 +1304,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_compress_finops_savings":
+            elif tool_name == "nephis_compress_finops_savings":
                 res = client.compress.calculate_finops_savings(
                     monthly_gb=args.get("monthly_gb", 100000.0),
                     compression_ratio=args.get("compression_ratio", 0.80)
@@ -1319,7 +1318,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_sockpass_verify":
+            elif tool_name == "nephis_sockpass_verify":
                 res = client.socket_handoff.verify_scm_rights()
                 return {
                     "jsonrpc": "2.0",
@@ -1330,7 +1329,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_nvme_finops_savings":
+            elif tool_name == "nephis_nvme_finops_savings":
                 res = client.nvme_cache.calculate_finops(
                     volume_type=args.get("volume_type", "gp3"),
                     provisioned_iops=args.get("provisioned_iops", 25000),
@@ -1345,7 +1344,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_mem_reclaim_scan":
+            elif tool_name == "nephis_mem_reclaim_scan":
                 res = client.mem_reclaim.scan_host(min_rss_mb=args.get("min_rss_mb", 20))
                 return {
                     "jsonrpc": "2.0",
@@ -1356,7 +1355,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_graynet_simulate":
+            elif tool_name == "nephis_graynet_simulate":
                 res = client.net_chaos.simulate(
                     scenario=args.get("scenario", "asymmetric-drop"),
                     seed=args.get("seed", 1337),
@@ -1372,7 +1371,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_io_arbiter_bench":
+            elif tool_name == "nephis_io_arbiter_bench":
                 res = client.nvme_arbiter.benchmark(enforce=args.get("enforce", True))
                 return {
                     "jsonrpc": "2.0",
@@ -1383,7 +1382,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_shm_compiler_bench":
+            elif tool_name == "nephis_shm_compiler_bench":
                 res = client.preparse_shm.benchmark(iterations=args.get("iterations", 25))
                 return {
                     "jsonrpc": "2.0",
@@ -1395,7 +1394,7 @@ def handle_request(req):
                 }
 
             # 5 Commercial Production Avenues (v2.0 Full Suite)
-            elif tool_name == "ananke_ci_accelerator":
+            elif tool_name == "nephis_ci_accelerator":
                 res = client.ci_accelerate(
                     changed_symbols=args.get("changed_symbols"),
                     test_suite_size=args.get("test_suite_size", 500),
@@ -1410,7 +1409,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_db_branch_wal":
+            elif tool_name == "nephis_db_branch_wal":
                 res = client.db_branch(
                     tenant_id=args.get("tenant_id", "tenant-enterprise-prod"),
                     target_lsn=args.get("target_lsn", "16/B374D848"),
@@ -1425,7 +1424,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_socket_handover":
+            elif tool_name == "nephis_socket_handover":
                 res = client.socket_handover(
                     canary_weight_pct=args.get("canary_weight_pct", 15),
                     in_flight_requests=args.get("in_flight_requests", 25)
@@ -1439,7 +1438,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_microvm_runner":
+            elif tool_name == "nephis_microvm_runner":
                 res = client.microvm_runner(
                     guest_ram_mb=args.get("guest_ram_mb", 64),
                     sandboxes_count=args.get("sandboxes_count", 120)
@@ -1453,7 +1452,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_finops_audit":
+            elif tool_name == "nephis_finops_audit":
                 res = client.finops_optimize(
                     traffic_tb=args.get("traffic_tb", 10.0),
                     volumes_count=args.get("volumes_count", 2)
@@ -1467,7 +1466,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_frontier_catalyzer_fork":
+            elif tool_name == "nephis_frontier_catalyzer_fork":
                 res = client.catalyzer_fork(
                     template_id=args.get("template_id", "tpl-python-3.12"),
                     sandbox_count=args.get("sandbox_count", 120)
@@ -1481,7 +1480,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_frontier_ktls_sockmap":
+            elif tool_name == "nephis_frontier_ktls_sockmap":
                 res = client.ktls_sockmap_handover(
                     conn_id=args.get("conn_id", "sockmap-live-tls-01"),
                     target_gen=args.get("target_gen", "gen-v2")
@@ -1495,7 +1494,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_frontier_deltabranch_fork":
+            elif tool_name == "nephis_frontier_deltabranch_fork":
                 res = client.deltabranch_fork(
                     tenant_id=args.get("tenant_id", "tenant-core-prod"),
                     branch_count=args.get("branch_count", 20),
@@ -1510,7 +1509,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_frontier_rdt_cache":
+            elif tool_name == "nephis_frontier_rdt_cache":
                 res = client.rdt_partition_cache(
                     sandbox_count=args.get("sandbox_count", 120),
                     arch=args.get("arch", "auto")
@@ -1524,7 +1523,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_frontier_nvme_pushdown":
+            elif tool_name == "nephis_frontier_nvme_pushdown":
                 res = client.nvme_predicate_pushdown(
                     tenant_id=args.get("tenant_id", "tenant-analytics"),
                     rows=args.get("rows", 500000),
@@ -1539,7 +1538,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_frontier_specfuzz_synthesize":
+            elif tool_name == "nephis_frontier_specfuzz_synthesize":
                 res = client.specfuzz_synthesize(
                     vector_count=args.get("vector_count", 100000)
                 )
@@ -1552,7 +1551,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_frontier_vdso_schedule":
+            elif tool_name == "nephis_frontier_vdso_schedule":
                 res = client.vdso_deterministic_schedule(
                     sandbox_id=args.get("sandbox_id", "sbx-kronos-01"),
                     seed=args.get("seed", 9876543210),
@@ -1567,7 +1566,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_frontier_rdma_commit":
+            elif tool_name == "nephis_frontier_rdma_commit":
                 res = client.rdma_cluster_commit(
                     node_count=args.get("node_count", 100),
                     tx_count=args.get("tx_count", 10)
@@ -1582,7 +1581,7 @@ def handle_request(req):
                 }
 
             # 4 Green Research Breakthrough Tools
-            elif tool_name == "ananke_specbox_warm":
+            elif tool_name == "nephis_specbox_warm":
                 lang = args.get("language", "python")
                 mem = args.get("memory_mb", 128)
                 tenant = args.get("tenant_id", "tenant-default")
@@ -1604,7 +1603,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_ozz_concurrency_fuzz":
+            elif tool_name == "nephis_ozz_concurrency_fuzz":
                 cmd = args.get("target_command", "go test -race ./...")
                 iters = args.get("iterations", 50)
                 threads = args.get("thread_count", 4)
@@ -1627,7 +1626,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_lazylog_append":
+            elif tool_name == "nephis_lazylog_append":
                 tenant = args.get("tenant_id", "tenant-default")
                 rec_type = args.get("record_type", "WAL_RECORD_TX_COMMIT")
                 payload = args.get("payload", "")
@@ -1649,7 +1648,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name == "ananke_anvil_verify_liveness":
+            elif tool_name == "nephis_anvil_verify_liveness":
                 ctrl = args.get("controller_name", "ciel-sandbox-reconciler")
                 rank = args.get("initial_rank", 8)
                 res = {
@@ -1671,7 +1670,7 @@ def handle_request(req):
                     }
                 }
             # Admin & Security Killswitch Handlers
-            elif tool_name in ("ananke_admin_quarantine_tenant", "ananke_quarantine_tenant"):
+            elif tool_name in ("nephis_admin_quarantine_tenant", "nephis_quarantine_tenant"):
                 tid = args.get("tenant_id", "tenant-default")
                 reason = args.get("reason", "Security isolation trigger")
                 res = {
@@ -1691,7 +1690,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_admin_unquarantine_tenant", "ananke_unquarantine_tenant"):
+            elif tool_name in ("nephis_admin_unquarantine_tenant", "nephis_unquarantine_tenant"):
                 tid = args.get("tenant_id", "tenant-default")
                 res = {
                     "status": "unquarantined",
@@ -1707,7 +1706,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_admin_list_quarantined", "ananke_list_quarantined"):
+            elif tool_name in ("nephis_admin_list_quarantined", "nephis_list_quarantined"):
                 res = {
                     "quarantined_tenants": [],
                     "count": 0,
@@ -1722,7 +1721,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_verify_research_papers", "ananke_research_verify"):
+            elif tool_name in ("nephis_verify_research_papers", "nephis_research_verify"):
                 papers = [
                     "01. Jiagu (ATC '24) - Pre-decision scheduling [PASS]",
                     "02. PeeR (OSDI '26) - Preemptible eBPF [PASS]",
@@ -1753,7 +1752,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_multiverse_fork", "ananke_fork_multiverse"):
+            elif tool_name in ("nephis_multiverse_fork", "nephis_fork_multiverse"):
                 timeline_count = args.get("timeline_count", 50)
                 seed = args.get("seed", 1337)
                 try:
@@ -1783,7 +1782,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_clock_virtualize", "ananke_virtual_clock"):
+            elif tool_name in ("nephis_clock_virtualize", "nephis_virtual_clock"):
                 ticks = args.get("ticks", 1000)
                 action = args.get("action", "step")
                 res = {
@@ -1806,7 +1805,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_ldfi_solve", "ananke_ldfi"):
+            elif tool_name in ("nephis_ldfi_solve", "nephis_ldfi"):
                 budget = args.get("fault_budget", 2)
                 res = {
                     "status": "MINIMAL_CUTS_SYNTHESIZED",
@@ -1829,7 +1828,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_speculative_race", "ananke_race"):
+            elif tool_name in ("nephis_speculative_race", "nephis_race"):
                 candidates = args.get("candidates", [])
                 problem_id = args.get("problem_id", "race_01")
                 timeout_ms = args.get("timeout_ms", 30000)
@@ -1872,7 +1871,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_db_pitr_rewind", "ananke_pitr_rewind"):
+            elif tool_name in ("nephis_db_pitr_rewind", "nephis_pitr_rewind"):
                 try:
                     res = api_call("POST", "/v1/sandboxes/wal/rewind", {
                         "sandbox_id": args.get("sandbox_id"),
@@ -1897,7 +1896,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_db_reflink_snapshot", "ananke_reflink_snapshot"):
+            elif tool_name in ("nephis_db_reflink_snapshot", "nephis_reflink_snapshot"):
                 project_id = args.get("project_id", "default")
                 branch_name = args.get("branch_name", "branch-preview-01")
                 try:
@@ -1922,7 +1921,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_pty_connect", "ananke_pty"):
+            elif tool_name in ("nephis_pty_connect", "nephis_pty"):
                 sandbox_id = args.get("sandbox_id", "sbx-01")
                 try:
                     res = api_call("POST", f"/v1/sandboxes/{sandbox_id}/pty", {
@@ -1946,7 +1945,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_port_forward", "ananke_ports"):
+            elif tool_name in ("nephis_port_forward", "nephis_ports"):
                 sandbox_id = args.get("sandbox_id", "sbx-01")
                 c_port = args.get("container_port", 8080)
                 try:
@@ -1972,7 +1971,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_2pc_promote", "ananke_promote"):
+            elif tool_name in ("nephis_2pc_promote", "nephis_promote"):
                 branch_id = args.get("branch_id", "branch-01")
                 project_id = args.get("project_id", "default")
                 try:
@@ -1997,7 +1996,7 @@ def handle_request(req):
                     }
                 }
 
-            elif tool_name in ("ananke_reap_prefetch", "ananke_prefetch"):
+            elif tool_name in ("nephis_reap_prefetch", "nephis_prefetch"):
                 sandbox_id = args.get("sandbox_id", "sbx-01")
                 res = {
                     "status": "HOT_PAGES_PREFETCHED",

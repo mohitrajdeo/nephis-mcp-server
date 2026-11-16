@@ -16,7 +16,7 @@ from nephis.license import LicenseAuthority, LicenseToken, LicenseError
 
 from unittest.mock import patch, MagicMock
 
-class TestAnankeSeriesSDK(unittest.TestCase):
+class TestNephisSeriesSDK(unittest.TestCase):
     def setUp(self):
         # Hermetically isolate environment from external env vars
         self.old_env = os.environ.pop("NEPHIS_LICENSE_KEY", None)

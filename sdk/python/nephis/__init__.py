@@ -11,7 +11,7 @@ from nephis import __version__ as __upstream_version__
 from nephis.client import Client as UpstreamClient
 from nephis.exceptions import (
     NephisError,
-    AnankeConnectionError,
+    NephisConnectionError,
     APIError,
     ExecutionTimeoutError,
     SandboxNotFoundError,
@@ -234,7 +234,7 @@ class NephisClient(UpstreamClient):
 
 class NephisLicenseAuthority(UpstreamLicenseAuthority):
     """NEPHIS Licensing Authority with dual token / license_key keyword support."""
-    def __init__(self, token: Optional[str] = None, license_key: Optional[str] = None, secret: str = 'ananke_enterprise_signing_secret_prod_2026'):
+    def __init__(self, token: Optional[str] = None, license_key: Optional[str] = None, secret: str = 'nephis_enterprise_signing_secret_prod_2026'):
         tok = token or license_key
         super().__init__(token=tok, secret=secret)
 
@@ -247,8 +247,8 @@ LicenseAuthority = NephisLicenseAuthority
 CielLicenseAuthority = NephisLicenseAuthority
 NephisError = NephisError
 CielError = NephisError
-NephisConnectionError = AnankeConnectionError
-CielConnectionError = AnankeConnectionError
+NephisConnectionError = NephisConnectionError
+CielConnectionError = NephisConnectionError
 NephisAPIError = APIError
 CielAPIError = APIError
 

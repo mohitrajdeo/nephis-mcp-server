@@ -223,7 +223,7 @@ export class RootfsManager {
     return {
       engine: "nbdstream",
       device: "/dev/nbd0",
-      target_dir: options.targetDir || "/mnt/ananke_rootfs",
+      target_dir: options.targetDir || "/mnt/nephis_rootfs",
       block_size: 4096,
       virtual_size_gb: 4,
       measured_iops: 72317,

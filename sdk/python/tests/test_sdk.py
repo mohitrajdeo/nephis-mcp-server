@@ -412,7 +412,7 @@ class TestThanatonSDK(unittest.TestCase):
             unreachable_client.sandboxes.list()
         err_msg = str(ctx.exception)
         self.assertIn("Cannot connect to Thanaton Daemon", err_msg)
-        self.assertIn("Launch the daemon with 'ananked'", err_msg)
+        self.assertIn("Launch the daemon with 'nephisd'", err_msg)
         self.assertIn("Set base_url='https://nephis.theeducode.com/pricing'", err_msg)
 
     def test_escalation_required_exception(self):
