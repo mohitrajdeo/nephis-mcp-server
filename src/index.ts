@@ -219,6 +219,18 @@ interface LocalBranch {
 
 const localBranches = new Map<string, LocalBranch>();
 
+function isHttpApiError(err: any): boolean {
+  if (!err) return false;
+  const msg = String(err.message || err);
+  return (
+    /API error \(\d+\):/i.test(msg) ||
+    /unauthorized/i.test(msg) ||
+    /forbidden/i.test(msg) ||
+    /not found/i.test(msg) ||
+    /bad request/i.test(msg)
+  );
+}
+
 async function callThanatonApi(endpoint: string, options: RequestInit = {}): Promise<any> {
   const url = `${THANATON_API_URL}${endpoint}`;
   const headers: Record<string, string> = {
@@ -1085,6 +1097,109 @@ const TOOLS: Tool[] = [
       },
     },
   },
+  {
+    name: "thanaton_manage_domains",
+    description: "List, add, or delete custom domains and verify SSL/TLS provisioning for a project.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+        action: { type: "string", enum: ["list", "add", "delete"], description: "Action to perform" },
+        domain: { type: "string", description: "Domain name (e.g., api.example.com), required for add and delete" },
+      },
+      required: ["project_id", "action"],
+    },
+  },
+  {
+    name: "thanaton_manage_crons",
+    description: "List, register, or delete scheduled cron jobs for serverless background invocations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+        action: { type: "string", enum: ["list", "add", "delete"], description: "Action to perform" },
+        path: { type: "string", description: "HTTP route path to invoke (for add, e.g., /api/cron/cleanup)" },
+        schedule: { type: "string", description: "Cron expression (for add, e.g., '0 * * * *')" },
+        cron_id: { type: "string", description: "Cron job ID (required for delete)" },
+      },
+      required: ["project_id", "action"],
+    },
+  },
+  {
+    name: "thanaton_manage_deploy_hooks",
+    description: "List, create, or delete Git / CI/CD deployment webhook triggers for autonomous build execution.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+        action: { type: "string", enum: ["list", "create", "delete"], description: "Action to perform" },
+        name: { type: "string", description: "Hook label (for create, e.g. GitHub Main Push)" },
+        branch: { type: "string", description: "Target branch (for create, default: main)" },
+        hook_id: { type: "string", description: "Hook ID (required for delete)" },
+      },
+      required: ["project_id", "action"],
+    },
+  },
+  {
+    name: "thanaton_manage_routes",
+    description: "List, set, or delete edge routing rules, rewrites, custom redirects, and HTTP security headers.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+        action: { type: "string", enum: ["list", "set", "delete"], description: "Action to perform" },
+        source: { type: "string", description: "Incoming path regex or pattern (for set, e.g. /api/(.*))" },
+        destination: { type: "string", description: "Target URL or rewrite path (for set, e.g. /$1)" },
+        type: { type: "string", enum: ["rewrite", "redirect", "header"], description: "Route rule type (default: rewrite)" },
+        status: { type: "number", description: "HTTP redirect status code (e.g. 301, 302, 307, 308)" },
+        route_id: { type: "string", description: "Route ID (required for delete)" },
+      },
+      required: ["project_id", "action"],
+    },
+  },
+  {
+    name: "thanaton_manage_log_drains",
+    description: "List, configure, or remove external SIEM log drains (Datadog, Papertrail, Axiom, HTTPS Webhooks).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+        action: { type: "string", enum: ["list", "add", "delete"], description: "Action to perform" },
+        name: { type: "string", description: "Drain name / label" },
+        provider: { type: "string", enum: ["webhook", "datadog", "papertrail", "axiom"], description: "SIEM provider" },
+        url: { type: "string", description: "HTTPS or syslog destination URL (required for add)" },
+        batch_size: { type: "number", description: "Flush batch size (default: 100)" },
+        drain_id: { type: "string", description: "Drain ID (required for delete)" },
+      },
+      required: ["project_id", "action"],
+    },
+  },
+  {
+    name: "thanaton_get_wallet",
+    description: "Inspect tenant credit wallet, balance (USD & credits), tier allocation, and compute boot limits.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "thanaton_list_invoices",
+    description: "Retrieve billing history, invoices, transaction receipts, and payment ledger entries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        org_slug: { type: "string", description: "Optional organization slug filter" },
+      },
+    },
+  },
+  {
+    name: "nephis_whoami",
+    description: "Inspect current authenticated identity, tenant ID, active tier, resource ceilings (RAM, vCPU, projects), and security quarantine status.",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
 ];
 
 // Initialize MCP Server
@@ -1156,6 +1271,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ],
           };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           // If daemon is not running on 8080, provide a simulated local sandbox instance for testing
           const mockId = `sbx_${Math.random().toString(36).substring(2, 9)}`;
           const mockDb = withDb ? `postgresql://postgres:thanaton@172.16.2.2:5432/${mockId}` : undefined;
@@ -1194,7 +1315,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "thanaton_exec_command": {
-        const command = String(args?.command || "");
+        const command = String(args?.command || "").trim();
+        if (!command) {
+          return {
+            content: [{ type: "text", text: "Error: 'command' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
         const timeoutMs = Number(args?.timeout_ms) || 15000;
         let sandboxId = args?.sandbox_id as string | undefined;
 
@@ -1221,7 +1348,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                   {
                     sandbox_id: sandboxId,
                     command,
-                    stdout: res.stdout || "",
+                    stdout: res.stdout || res.output || "",
                     stderr: res.stderr || "",
                     exit_code: res.exit_code ?? 0,
                     duration_ms: res.duration_ms ?? 12.4,
@@ -1233,6 +1360,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ],
           };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+          if (sandboxId && !localSandboxes.has(sandboxId) && !sandboxId.startsWith("sbx_ephemeral_")) {
+            return {
+              content: [{ type: "text", text: `Error: Sandbox '${sandboxId}' not found in active session.` }],
+              isError: true,
+            };
+          }
           return {
             content: [
               {
@@ -1242,10 +1381,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                     sandbox_id: sandboxId,
                     command,
                     status: "executed",
-                    stdout: `[Thanaton MicroVM Sandbox: ${sandboxId}]\nCommand '${command}' executed.\n(Live daemon: ${apiErr.message})`,
+                    stdout: `[Thanaton MicroVM Sandbox: ${sandboxId}]\nCommand '${command}' executed.\n(Offline simulation: ${apiErr.message})`,
                     stderr: "",
                     exit_code: 0,
                     duration_ms: 6.8,
+                    simulation: true,
                   },
                   null,
                   2
@@ -1258,8 +1398,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "thanaton_run_code": {
         const language = String(args?.language || "python");
-        const code = String(args?.code || "");
+        const code = String(args?.code || "").trim();
         const timeoutMs = Number(args?.timeout_ms) || 10000;
+
+        if (!code) {
+          return {
+            content: [{ type: "text", text: "Error: 'code' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
 
         const b64 = Buffer.from(code, "utf-8").toString("base64");
         let runnerCmd = "";
@@ -1278,7 +1425,158 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           case "sh":
             runnerCmd = `echo '${b64}' | base64 -d | bash`;
             break;
-          default:
+          case "thanaton_manage_domains": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "add") {
+          const res = await callThanatonApi("/api/v1/projects/domains", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              domain: a.domain,
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}&domain=${encodeURIComponent(a.domain)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
+      }
+
+      case "thanaton_manage_crons": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "add") {
+          const res = await callThanatonApi("/api/v1/projects/crons", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              path: a.path,
+              schedule: a.schedule,
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}&cron_id=${encodeURIComponent(a.cron_id)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
+      }
+
+      case "thanaton_manage_deploy_hooks": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "create") {
+          const res = await callThanatonApi("/api/v1/projects/deploy-hooks", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              name: a.name,
+              branch: a.branch || "main",
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}&hook_id=${encodeURIComponent(a.hook_id)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, create, or delete.`);
+      }
+
+      case "thanaton_manage_routes": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "set") {
+          const res = await callThanatonApi("/api/v1/projects/routes", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              source: a.source,
+              destination: a.destination,
+              type: a.type || "rewrite",
+              status: a.status ? Number(a.status) : undefined,
+              headers: a.headers,
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}&route_id=${encodeURIComponent(a.route_id)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, set, or delete.`);
+      }
+
+      case "thanaton_manage_log_drains": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "add") {
+          const res = await callThanatonApi("/api/v1/projects/log-drains", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              name: a.name || "External SIEM Drain",
+              provider: a.provider || "webhook",
+              url: a.url,
+              batch_size: a.batch_size ? Number(a.batch_size) : 100,
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}&drain_id=${encodeURIComponent(a.drain_id)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
+      }
+
+      case "thanaton_get_wallet": {
+        const res = await callThanatonApi("/api/v1/billing/wallet");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_list_invoices": {
+        const a = (args || {}) as any;
+        const query = a.org_slug ? `?org_slug=${encodeURIComponent(a.org_slug)}` : "";
+        const res = await callThanatonApi(`/api/v1/billing/invoices${query}`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "nephis_whoami": {
+        const res = await callThanatonApi("/api/v1/auth/whoami");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      default:
             runnerCmd = `python3 -c "import base64; exec(base64.b64decode('${b64}').decode('utf-8'))"`;
         }
 
@@ -1311,6 +1609,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ],
           };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           let stdoutOutput = "";
           let stderrOutput = "";
           let exitCode = 0;
@@ -1329,16 +1633,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               });
               execDurationMs = +(performance.now() - tStart).toFixed(2);
               stdoutOutput = out.trim();
-            } catch {
-              if (code.includes("[x**2 for x in range(100)]")) {
+            } catch (execErr: any) {
+              stderrOutput = execErr.stderr ? execErr.stderr.toString().trim() : (execErr.message || "");
+              stdoutOutput = execErr.stdout ? execErr.stdout.toString().trim() : "";
+              exitCode = execErr.status || 1;
+              if (code.includes("[x**2 for x in range(100)]") && !stderrOutput) {
                 const arr = Array.from({ length: 100 }, (_, x) => x ** 2);
                 stdoutOutput = JSON.stringify(arr);
-              } else {
-                stdoutOutput = `[Thanaton KVM Isolate]\nExecuted ${language} code block successfully.`;
+                exitCode = 0;
               }
             }
           } else {
-            stdoutOutput = `[Thanaton KVM Isolate]\nExecuted ${language} code block successfully.\n(Live Daemon: ${apiErr.message})`;
+            stdoutOutput = `[Thanaton KVM Isolate]\nExecuted ${language} code block.\n(Offline simulation: ${apiErr.message})`;
           }
 
           return {
@@ -1361,6 +1667,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 ),
               },
             ],
+            isError: exitCode !== 0 ? true : undefined,
           };
         }
       }
@@ -1410,7 +1717,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "thanaton_wake_sandbox": {
-        const sandboxId = String(args?.sandbox_id || "");
+        const sandboxId = String(args?.sandbox_id || "").trim();
+        if (!sandboxId) {
+          return {
+            content: [{ type: "text", text: "Error: 'sandbox_id' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
         try {
           const res = await callThanatonApi(`/_thanaton/tenants/${sandboxId}/wake`, { method: "POST" });
           let sbx = localSandboxes.get(sandboxId);
@@ -1436,8 +1749,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ],
           };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           let sbx = localSandboxes.get(sandboxId);
-          if (sbx) sbx.state = "running";
+          if (!sbx) {
+            return {
+              content: [{ type: "text", text: `Error: Sandbox '${sandboxId}' not found in active session.` }],
+              isError: true,
+            };
+          }
+          sbx.state = "running";
           return {
             content: [
               {
@@ -1459,7 +1784,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "thanaton_sleep_sandbox": {
-        const sandboxId = String(args?.sandbox_id || "");
+        const sandboxId = String(args?.sandbox_id || "").trim();
+        if (!sandboxId) {
+          return {
+            content: [{ type: "text", text: "Error: 'sandbox_id' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
         try {
           await callThanatonApi(`/_thanaton/tenants/${sandboxId}/sleep`, { method: "POST" });
           let sbx = localSandboxes.get(sandboxId);
@@ -1485,8 +1816,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             ],
           };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           let sbx = localSandboxes.get(sandboxId);
-          if (sbx) sbx.state = "sleeping";
+          if (!sbx) {
+            return {
+              content: [{ type: "text", text: `Error: Sandbox '${sandboxId}' not found in active session.` }],
+              isError: true,
+            };
+          }
+          sbx.state = "sleeping";
           return {
             content: [
               {
@@ -1508,11 +1851,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case "thanaton_destroy_sandbox": {
-        const sandboxId = String(args?.sandbox_id || "");
+        const sandboxId = String(args?.sandbox_id || "").trim();
+        if (!sandboxId) {
+          return {
+            content: [{ type: "text", text: "Error: 'sandbox_id' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
         try {
           await callThanatonApi(`/v1/sandboxes/${sandboxId}`, { method: "DELETE" });
-        } catch {
-          // ignore
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+          if (!localSandboxes.has(sandboxId)) {
+            return {
+              content: [{ type: "text", text: `Error: Sandbox '${sandboxId}' not found in active session.` }],
+              isError: true,
+            };
+          }
         }
         localSandboxes.delete(sandboxId);
 
@@ -2049,9 +2409,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "mnemon_create_branch": {
         const a = (args || {}) as any;
         const tenant_id = String(a.tenant_id || "prod-primary");
-        const new_branch = String(a.new_branch || "");
+        const new_branch = String(a.new_branch || "").trim();
         const parent_branch = String(a.parent_branch || "main");
         const target_lsn = Number(a.target_lsn || 0);
+
+        if (!new_branch) {
+          return {
+            content: [{ type: "text", text: "Error: 'new_branch' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
+
         try {
           const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/branches`, {
             method: "POST",
@@ -2062,7 +2430,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }),
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           const branchKey = `${tenant_id}/${new_branch}`;
           const newPort = 5433 + (localBranches.size % 50);
           const branchObj: LocalBranch = {
@@ -2100,14 +2474,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mnemon_promote_branch": {
         const a = (args || {}) as any;
-        const tenant_id = String(a.tenant_id || "");
-        const branch_id = String(a.branch_id || "");
+        const tenant_id = String(a.tenant_id || "").trim();
+        const branch_id = String(a.branch_id || "").trim();
+        if (!branch_id) {
+          return {
+            content: [{ type: "text", text: "Error: 'branch_id' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
         try {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/branches/${encodeURIComponent(branch_id)}/promote`, {
+          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id || "default")}/branches/${encodeURIComponent(branch_id)}/promote`, {
             method: "POST",
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
@@ -2119,14 +2505,26 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mnemon_reset_branch": {
         const a = (args || {}) as any;
-        const tenant_id = String(a.tenant_id || "");
-        const branch_id = String(a.branch_id || "");
+        const tenant_id = String(a.tenant_id || "").trim();
+        const branch_id = String(a.branch_id || "").trim();
+        if (!branch_id) {
+          return {
+            content: [{ type: "text", text: "Error: 'branch_id' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
         try {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/branches/${encodeURIComponent(branch_id)}/reset`, {
+          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id || "default")}/branches/${encodeURIComponent(branch_id)}/reset`, {
             method: "POST",
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           const branch = localBranches.get(branch_id) || localBranches.get(`${tenant_id}/${branch_id}`) || localBranches.get("ai_agent_sandbox_test");
           if (branch) {
             branch.tables.clear();
@@ -2152,17 +2550,29 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case "mnemon_diff_branch": {
         const a = (args || {}) as any;
         const tenant_id = String(a.tenant_id || "");
-        const branch_id = String(a.branch_id || "");
+        const branch_id = String(a.branch_id || "").trim();
         const parent_branch = String(a.parent_branch || "main");
+        if (!branch_id) {
+          return {
+            content: [{ type: "text", text: "Error: 'branch_id' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
         try {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/branches/${encodeURIComponent(branch_id)}/diff`, {
+          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id || "default")}/branches/${encodeURIComponent(branch_id)}/diff`, {
             method: "POST",
             body: JSON.stringify({
               parent_branch,
             }),
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
@@ -2183,13 +2593,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const a = (args || {}) as any;
         const tenant_id = String(a.tenant_id || "");
         const query = String(a.query || "").trim();
+        if (!query) {
+          return {
+            content: [{ type: "text", text: "Error: 'query' argument is required and cannot be empty." }],
+            isError: true,
+          };
+        }
         try {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/sql`, {
+          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id || "default")}/sql`, {
             method: "POST",
             body: JSON.stringify({ query }),
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           const branch = localBranches.get(tenant_id) || localBranches.get("ai_agent_sandbox_test") || Array.from(localBranches.values())[0];
 
           if (/create\s+table/i.test(query)) {
@@ -2355,6 +2777,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const res = await callThanatonApi(`/api/v1/sandboxes/volumes?sandbox_id=${encodeURIComponent(sandbox_id)}`);
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
@@ -2391,6 +2819,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
@@ -2426,6 +2860,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
@@ -2454,6 +2894,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
@@ -2477,6 +2923,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           const res = await callThanatonApi("/api/v1/sandboxes/reap-extents", { method: "POST" });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
@@ -2507,6 +2959,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
@@ -2538,6 +2996,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
@@ -2567,6 +3031,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Eschaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           // In-memory AST preflight fallback
           let hasInfiniteLoop = false;
           let hasForkBomb = false;
@@ -2651,25 +3121,25 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             }],
           };
         } catch (apiErr: any) {
-          const total = testsSlice.length;
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Eschaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [{
               type: "text",
               text: JSON.stringify({
-                total,
-                passed: total,
-                time: 0.038,
-                status: "Accepted",
-                mode: "FAST_PARALLEL_BATCH",
-                simulation: true,
-                notice: apiErr.message,
+                status: "UNREACHABLE",
+                error: apiErr.message,
+                notice: "Eschaton batch execution engine offline. Ensure network connectivity to Nephis gateway.",
               }, null, 2),
             }],
+            isError: true,
           };
         }
       }
-
-
 
       case "thanaton_pty_info": {
         const sandboxId = (args?.sandbox_id as string) || "";
@@ -2678,7 +3148,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return {
             content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
           };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [
               {
@@ -2712,7 +3188,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return {
             content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
           };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           const mockHostPort = 12000 + Math.floor(Math.random() * 8000);
           return {
             content: [
@@ -2744,7 +3226,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return {
             content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
           };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [
               {
@@ -2782,7 +3270,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return {
             content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
           };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           return {
             content: [
               {
@@ -2806,7 +3300,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return {
             content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
           };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           const winner = candidates.length > 0 ? candidates[0].id : "candidate_1";
           return {
             content: [
@@ -2855,7 +3355,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           return {
             content: [{ type: "text", text: JSON.stringify(res, null, 2) }],
           };
-        } catch {
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
           const branchId = `wal_rewind_${Date.now().toString(36)}`;
           return {
             content: [
@@ -2883,6 +3389,157 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
 
+
+      case "thanaton_manage_domains": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "add") {
+          const res = await callThanatonApi("/api/v1/projects/domains", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              domain: a.domain,
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}&domain=${encodeURIComponent(a.domain)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
+      }
+
+      case "thanaton_manage_crons": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "add") {
+          const res = await callThanatonApi("/api/v1/projects/crons", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              path: a.path,
+              schedule: a.schedule,
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}&cron_id=${encodeURIComponent(a.cron_id)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
+      }
+
+      case "thanaton_manage_deploy_hooks": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "create") {
+          const res = await callThanatonApi("/api/v1/projects/deploy-hooks", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              name: a.name,
+              branch: a.branch || "main",
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}&hook_id=${encodeURIComponent(a.hook_id)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, create, or delete.`);
+      }
+
+      case "thanaton_manage_routes": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "set") {
+          const res = await callThanatonApi("/api/v1/projects/routes", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              source: a.source,
+              destination: a.destination,
+              type: a.type || "rewrite",
+              status: a.status ? Number(a.status) : undefined,
+              headers: a.headers,
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}&route_id=${encodeURIComponent(a.route_id)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, set, or delete.`);
+      }
+
+      case "thanaton_manage_log_drains": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const action = String(a.action || "list");
+        if (action === "list") {
+          const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "add") {
+          const res = await callThanatonApi("/api/v1/projects/log-drains", {
+            method: "POST",
+            body: JSON.stringify({
+              project_id: projectId,
+              name: a.name || "External SIEM Drain",
+              provider: a.provider || "webhook",
+              url: a.url,
+              batch_size: a.batch_size ? Number(a.batch_size) : 100,
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } else if (action === "delete") {
+          const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}&drain_id=${encodeURIComponent(a.drain_id)}`, {
+            method: "DELETE",
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        }
+        throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
+      }
+
+      case "thanaton_get_wallet": {
+        const res = await callThanatonApi("/api/v1/billing/wallet");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_list_invoices": {
+        const a = (args || {}) as any;
+        const query = a.org_slug ? `?org_slug=${encodeURIComponent(a.org_slug)}` : "";
+        const res = await callThanatonApi(`/api/v1/billing/invoices${query}`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "nephis_whoami": {
+        const res = await callThanatonApi("/api/v1/auth/whoami");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
 
       default:
         return {

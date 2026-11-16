@@ -151,7 +151,17 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(toolNames.includes("eschaton_fast_batch"));
     assert.ok(toolNames.includes("nephis_fast_batch"));
 
-    assert.equal(res.result.tools.length, 55);
+    // Control Plane & Billing Tools
+    assert.ok(toolNames.includes("thanaton_manage_domains"));
+    assert.ok(toolNames.includes("thanaton_manage_crons"));
+    assert.ok(toolNames.includes("thanaton_manage_deploy_hooks"));
+    assert.ok(toolNames.includes("thanaton_manage_routes"));
+    assert.ok(toolNames.includes("thanaton_manage_log_drains"));
+    assert.ok(toolNames.includes("thanaton_get_wallet"));
+    assert.ok(toolNames.includes("thanaton_list_invoices"));
+    assert.ok(toolNames.includes("nephis_whoami"));
+
+    assert.equal(res.result.tools.length, 63);
   });
 
   let provisionedSandboxId = "";
@@ -371,5 +381,38 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(res.result);
     assert.equal(res.result.isError, true);
     assert.ok(res.result.content[0].text.includes("Unknown tool"));
+  });
+
+  it("should return isError true when thanaton_exec_command is called with empty command", async () => {
+    const res = await sendRpc("tools/call", {
+      name: "thanaton_exec_command",
+      arguments: { command: "" },
+    });
+
+    assert.ok(res.result);
+    assert.equal(res.result.isError, true);
+    assert.ok(res.result.content[0].text.includes("Error: 'command' argument is required"));
+  });
+
+  it("should return isError true when thanaton_wake_sandbox is called with nonexistent sandbox", async () => {
+    const res = await sendRpc("tools/call", {
+      name: "thanaton_wake_sandbox",
+      arguments: { sandbox_id: "nonexistent_sbx_9999" },
+    });
+
+    assert.ok(res.result);
+    assert.equal(res.result.isError, true);
+    assert.ok(res.result.content[0].text.includes("not found"));
+  });
+
+  it("should return isError true when mnemon_execute_sql is called with empty query", async () => {
+    const res = await sendRpc("tools/call", {
+      name: "mnemon_execute_sql",
+      arguments: { query: "" },
+    });
+
+    assert.ok(res.result);
+    assert.equal(res.result.isError, true);
+    assert.ok(res.result.content[0].text.includes("Error: 'query' argument is required"));
   });
 });
