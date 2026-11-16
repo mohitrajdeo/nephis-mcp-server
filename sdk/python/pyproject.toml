@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nephis"
-version = "1.0.1"
+version = "1.0.3"
 description = "NEPHIS: High-Throughput Isolated Execution Substrate & Zero-Copy Database Branching for AI Agents"
 readme = "README.md"
 requires-python = ">=3.8"
@@ -41,4 +41,3 @@ thanaton = "thanaton.cli:main"
 mnemon = "mnemon.cli:main"
 eschatonctl = "eschaton.cli:main"
 nephis-mcp = "nephis.mcp:main"
-cielctl = "ciel.cli:main"

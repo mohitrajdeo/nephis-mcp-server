@@ -1,0 +1,6 @@
+[console_scripts]
+eschatonctl = eschaton.cli:main
+mnemon = mnemon.cli:main
+nephis-mcp = nephis.mcp:main
+nephisctl = nephis.cli:main
+thanaton = thanaton.cli:main

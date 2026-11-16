@@ -7,7 +7,6 @@ export {
   ThanatonClient,
   ThanatonClient as NephisClient,
   ThanatonClient as CielClient,
-  ThanatonClient as NephisClient,
   ThanatonClient as Nephis,
   SandboxManager,
   CDCManager,
