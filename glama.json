@@ -1,45 +1,23 @@
 {
   "$schema": "https://glama.ai/mcp/schemas/server.json",
+  "maintainers": [
+    "mohitrajdeo"
+  ],
   "name": "nephis-mcp-server",
-  "description": "Sub-6ms hardware KVM MicroVM sandboxes, 30ms zero-copy PostgreSQL branching, and sub-38ms online code judging for AI coding agents.",
-  "homepage": "https://nephis.theeducode.com",
-  "repository": "https://github.com/mohitrajdeo/nephis-mcp-server",
-  "installation": {
-    "command": "npx",
-    "args": ["-y", "nephis-mcp-server"],
-    "env": {
-      "NEPHIS_API_URL": "https://nephis.theeducode.com",
-      "NEPHIS_API_KEY": ""
-    }
-  },
-  "tools": [
-    {
-      "name": "thanaton_spawn_sandbox",
-      "description": "Spawn a sub-6ms hardware KVM microVM with isolated vCPU, RAM, and disk for untrusted code execution."
-    },
-    {
-      "name": "thanaton_exec_command",
-      "description": "Execute shell commands inside an isolated microVM sandbox with real-time stdout/stderr streaming."
-    },
-    {
-      "name": "thanaton_run_code",
-      "description": "Execute code snippets in Python, Node.js, C++, Rust, Go, or Bash inside a dedicated microVM."
-    },
-    {
-      "name": "mnemon_create_branch",
-      "description": "Create an instant (<31ms) zero-copy Copy-on-Write PostgreSQL 16 database branch from any parent branch."
-    },
-    {
-      "name": "mnemon_execute_sql",
-      "description": "Execute interactive SQL queries directly against any branch or database instance."
-    },
-    {
-      "name": "eschaton_fast_batch",
-      "description": "Execute 50-testcase algorithmic batches in parallel with sub-38ms latency (Judge0 drop-in)."
-    },
-    {
-      "name": "nephis_whoami",
-      "description": "Introspect active developer tenant, trial credit balance, rate limits, and API keys."
-    }
+  "description": "Sub-6ms hardware KVM MicroVM sandboxes, 30ms zero-copy PostgreSQL branching, and sub-38ms online code judging in ap-south-1.",
+  "type": "mcp_server",
+  "status": "active",
+  "transport": [
+    "stdio",
+    "http"
+  ],
+  "keywords": [
+    "mcp-server",
+    "microvm",
+    "postgresql",
+    "judge0",
+    "thanaton",
+    "mnemon",
+    "eschaton"
   ]
 }
