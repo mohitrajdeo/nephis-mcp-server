@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nephis"
+version = "1.0.1"
+description = "NEPHIS: High-Throughput Isolated Execution Substrate & Zero-Copy Database Branching for AI Agents"
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Mohit Raj Deo", email = "mohit@mohitrajdeo.in" }
+]
+keywords = ["nephis", "microvm", "sandbox", "mcp", "ai-agents", "code-evaluation", "judge0-alternative", "database-branching"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "License :: OSI Approved :: Apache Software License",
+]
+dependencies = [
+    "requests>=2.28.0",
+]
+
+[project.urls]
+Homepage = "https://nephis.theeducode.com"
+Documentation = "https://nephis.theeducode.com"
+Repository = "https://github.com/mohitrajdeo/nephis-mcp-server"
+Author = "https://mohitrajdeo.in"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+]
+
+[project.scripts]
+nephisctl = "nephis.cli:main"
+thanaton = "thanaton.cli:main"
+mnemon = "mnemon.cli:main"
+eschatonctl = "eschaton.cli:main"
+nephis-mcp = "nephis.mcp:main"
+cielctl = "ciel.cli:main"

@@ -1,0 +1,1284 @@
+#!/usr/bin/env python3
+"""Mnemon Serverless PostgreSQL Platform CLI tool."""
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+
+def get_base_url() -> str:
+    raw = os.environ.get("MNEMON_MGMT_URL", os.environ.get("MNEMON_URL", "https://mnemon.theeducode.com/api"))
+    return raw.strip().rstrip("/")
+
+
+def get_config_dir() -> str:
+    home = os.path.expanduser("~")
+    return os.path.join(home, ".mnemon")
+
+
+def get_auth_token() -> Optional[str]:
+    # 1. Environment variables (NEPHIS_API_KEY prioritized for unified authentication)
+    for env_var in ("NEPHIS_API_KEY", "MNEMON_API_KEY", "MNEMON_TOKEN"):
+        val = os.environ.get(env_var)
+        if val and val.strip():
+            return val.strip()
+
+    # 2. Config file ~/.mnemon/config.json
+    cfg_file = os.path.join(get_config_dir(), "config.json")
+    if os.path.isfile(cfg_file):
+        try:
+            with open(cfg_file, "r", encoding="utf-8") as f:
+                cfg = json.load(f)
+                token = cfg.get("api_key") or cfg.get("token")
+                if token:
+                    return str(token).strip()
+        except Exception:
+            pass
+    return None
+
+
+def request(method: str, path: str, body: Optional[Dict[str, Any]] = None, exit_on_error: bool = True) -> Any:
+    url = f"{get_base_url()}{path}"
+    data = None
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mnemon-CLI/2.0.0 (Windows NT 10.0; Win64; x64) Nephis/Unified-Ingress"
+    }
+    token = get_auth_token()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+        headers["X-API-Key"] = token
+
+    if body is not None:
+        data = json.dumps(body).encode("utf-8")
+        headers["Content-Type"] = "application/json"
+
+    req = urllib.request.Request(url, data=data, headers=headers, method=method)
+    try:
+        with urllib.request.urlopen(req, timeout=15.0) as response:
+            resp_bytes = response.read()
+            if not resp_bytes:
+                return {}
+            return json.loads(resp_bytes.decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if not exit_on_error:
+            raise
+        err_msg = e.read().decode("utf-8", errors="replace")
+        try:
+            parsed = json.loads(err_msg)
+            if "error" in parsed:
+                err_msg = parsed["error"]
+            elif "message" in parsed:
+                err_msg = parsed["message"]
+        except Exception:
+            pass
+        print(f"[!] HTTP Error {e.code}: {err_msg}", file=sys.stderr)
+        sys.exit(1)
+    except urllib.error.URLError as e:
+        if not exit_on_error:
+            raise
+        print(f"[!] Cannot connect to Mnemon-DB daemon at {url}: {e.reason}", file=sys.stderr)
+        print("    Ensure 'mnemon-daemon' or 'nephis-gateway' is running.", file=sys.stderr)
+        sys.exit(1)
+
+
+def normalize_list(data: Any, *candidate_keys: str) -> List[Dict[str, Any]]:
+    """Extract a list of dictionaries from either a raw list or wrapped dictionary."""
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+    if isinstance(data, dict):
+        for k in candidate_keys:
+            if k in data and isinstance(data[k], list):
+                return [item for item in data[k] if isinstance(item, dict)]
+        for k in ("items", "data", "tenants", "projects", "branches", "plans", "snapshots", "timelines"):
+            if k in data and isinstance(data[k], list):
+                return [item for item in data[k] if isinstance(item, dict)]
+        for v in data.values():
+            if isinstance(v, list) and v and isinstance(v[0], dict):
+                return v
+        if data and any(k in data for k in ("tenant_id", "project_id", "branch_id", "id")):
+            return [data]
+    return []
+
+
+def api_get(path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    if params:
+        qs = urllib.parse.urlencode({k: v for k, v in params.items() if v is not None})
+        if qs:
+            path = f"{path}?{qs}"
+    return request("GET", path)
+
+
+def api_post(path: str, body: Optional[Dict[str, Any]] = None) -> Any:
+    return request("POST", path, body=body)
+
+
+def print_table(headers: List[str], rows: List[List[Any]]) -> None:
+    if not rows:
+        print("(empty)")
+        return
+    widths = [len(str(h)) for h in headers]
+    for row in rows:
+        for i, val in enumerate(row):
+            widths[i] = max(widths[i], len(str(val)))
+
+    sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+    print(sep)
+    header_str = "|" + "|".join(f" {str(h):<{widths[i]}} " for i, h in enumerate(headers)) + "|"
+    print(header_str)
+    print(sep)
+    for row in rows:
+        row_str = "|" + "|".join(f" {str(val):<{widths[i]}} " for i, val in enumerate(row)) + "|"
+        print(row_str)
+    print(sep)
+
+
+def cmd_list(args):
+    data = request("GET", "/v1/status")
+    items = normalize_list(data, "tenants", "projects", "instances")
+    if not items and isinstance(data, dict) and "status" in data and "tenants" not in data:
+        try:
+            p_data = request("GET", "/v1/projects")
+            items = normalize_list(p_data, "projects", "items")
+        except Exception:
+            pass
+    headers = ["TENANT ID", "STATE", "PORT", "PID", "ACTIVE CONNS", "WAKES", "LAST ACTIVE"]
+    rows = []
+    for item in items:
+        tid = item.get("tenant_id") or item.get("id") or item.get("project_id", "")
+        rows.append([
+            tid,
+            item.get("state") or item.get("status", "ACTIVE"),
+            str(item.get("port", "")),
+            str(item.get("pid", "")),
+            str(item.get("active_conns", 0)),
+            str(item.get("wake_count", 0)),
+            item.get("last_active", "")[:19] if item.get("last_active") else "-"
+        ])
+    print_table(headers, rows)
+
+
+def cmd_create(args):
+    payload = {
+        "tenant_id": args.tenant_id,
+        "memory_mb": args.memory_mb,
+        "vcpus": args.vcpus,
+        "port": args.port
+    }
+    print(f"[*] Provisioning tenant '{args.tenant_id}' (Memory: {args.memory_mb}MB, VCPUs: {args.vcpus})...")
+    res = request("POST", "/v1/tenants/provision", body=payload)
+    print(f"[+] Tenant '{args.tenant_id}' successfully created and listening on port {res.get('port')}!")
+    headers = ["PROPERTY", "VALUE"]
+    api_key = res.get("api_key") or res.get("token") or "-"
+    claim_token = res.get("claim_token") or "-"
+    base_host = get_base_url().split("://")[-1].split("/")[0].split(":")[0]
+    conn_str = res.get("connection_string") or res.get("dsn") or f"postgresql://postgres@{base_host}:{res.get('port')}/{args.tenant_id}"
+    rows = [
+        ["Tenant ID", res.get("tenant_id", args.tenant_id)],
+        ["Assigned Port", str(res.get("port", ""))],
+        ["Unix Socket", str(res.get("socket_path", "-"))],
+        ["Cgroup Path", str(res.get("cgroup_path", "-"))],
+        ["Initial State", str(res.get("state", "ACTIVE"))],
+        ["API Key", str(api_key)],
+        ["Claim Token", str(claim_token)],
+        ["Connection String", str(conn_str)]
+    ]
+    print_table(headers, rows)
+    if claim_token and claim_token != "-":
+        print(f"\n[💡] Anonymous Database Created! Claim ownership to your account via:")
+        print(f"     mnemon claim {args.tenant_id} {claim_token}")
+
+
+def cmd_freeze(args):
+    res = request("POST", f"/v1/tenants/freeze?tenant={urllib.parse.quote(args.tenant_id)}")
+    print(f"[+] Tenant '{args.tenant_id}' frozen in Cgroups v2 (0.0% CPU usage).")
+
+
+def cmd_resume(args):
+    res = request("POST", f"/v1/tenants/unfreeze?tenant={urllib.parse.quote(args.tenant_id)}")
+    dur = res.get("duration_ms", 0.0)
+    print(f"[+] Tenant '{args.tenant_id}' resumed in {dur:.2f}ms (<200µs target).")
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Schema Diff, Branch Reset, Time-Travel, BM25 Search, Object Storage
+# ---------------------------------------------------------------------------
+
+def cmd_diff(args):
+    """Show schema diff between a branch and its parent (or main)."""
+    params = {"tenant_id": args.tenant_id, "branch_id": args.branch}
+    if args.parent:
+        params["parent_branch"] = args.parent
+    res = api_get("/v1/tenants/branch/diff", params=params)
+    diff = res.get("diff", "")
+    migration = res.get("migration_ddl", "")
+    if not diff.strip():
+        print("[✓] No schema differences detected between branches.")
+    else:
+        print("=== Schema Diff ===")
+        print(diff)
+    if migration.strip():
+        print("\n=== Generated Migration DDL ===")
+        print(migration)
+
+
+def cmd_reset(args):
+    """Reset a branch back to its parent branch state (one-click branch reset)."""
+    payload = {"tenant_id": args.tenant_id, "branch_id": args.branch}
+    res = api_post("/v1/tenants/branch/reset", payload)
+    dur = res.get("duration_ms", 0.0)
+    print(f"[✓] Branch '{args.branch}' reset to parent state in {dur:.2f}ms.")
+
+
+def cmd_time_travel(args):
+    """Create a new branch from a point-in-time snapshot (continuous PITR)."""
+    payload = {
+        "tenant_id": args.tenant_id,
+        "new_branch": args.new_branch,
+        "target_time": args.time,
+    }
+    if args.parent:
+        payload["parent_branch"] = args.parent
+    res = api_post("/v1/tenants/branch/time-travel", payload)
+    branch_id = res.get("branch_id", args.new_branch)
+    dur = res.get("duration_ms", 0.0)
+    print(f"[✓] Time-travel branch '{branch_id}' created at {args.time} in {dur:.2f}ms.")
+    if res.get("database_url"):
+        print(f"    DATABASE_URL: {res['database_url']}")
+
+
+def cmd_search(args):
+    """Full-text BM25 search (or tsvector fallback) on a tenant table."""
+    payload = {
+        "tenant_id": args.tenant_id,
+        "table": args.table,
+        "query": args.query,
+    }
+    if args.columns:
+        payload["columns"] = args.columns.split(",")
+    res = api_post("/v1/tenants/search", payload)
+    mode = res.get("index_mode", "unknown")
+    rows = res.get("rows", [])
+    print(f"[✓] Search complete — engine: {mode}")
+    if isinstance(rows, list):
+        print(f"    Returned {len(rows)} row(s):")
+        import json as _json
+        for row in rows:
+            print("   ", _json.dumps(row))
+    else:
+        import json as _json
+        print(_json.dumps(rows, indent=2))
+
+
+def cmd_branch(args):
+    payload = {
+        "tenant_id": args.tenant_id,
+        "parent_branch": args.parent,
+        "new_branch": args.new_branch,
+        "target_lsn": args.lsn
+    }
+    print(f"[*] Creating instant CoW reflink branch '{args.new_branch}' from '{args.parent}'...")
+    res = request("POST", "/v1/tenants/branch", body=payload)
+    print(f"[+] Branch '{res.get('branch_id')}' created at timeline {res.get('timeline_id')} in <10ms!")
+
+
+def cmd_branches(args):
+    tenant = args.tenant or ""
+    if not tenant:
+        try:
+            acct = request("GET", "/v1/account", exit_on_error=False)
+            if isinstance(acct, dict) and acct.get("tenant_id"):
+                tenant = acct["tenant_id"]
+        except Exception:
+            pass
+    path = f"/v1/tenants/branches?tenant={urllib.parse.quote(tenant)}" if tenant else "/v1/tenants/branches"
+    data = request("GET", path)
+    items = normalize_list(data, "branches")
+    headers = ["BRANCH ID", "PARENT", "TENANT", "TIMELINE", "TARGET LSN", "CREATED AT"]
+    rows = []
+    for item in items:
+        lsn_val = item.get("target_lsn", 0)
+        try:
+            lsn_str = f"0x{int(str(lsn_val), 0):X}"
+        except Exception:
+            lsn_str = str(lsn_val)
+        rows.append([
+            item.get("branch_id", "") or item.get("id", ""),
+            item.get("parent_branch_id", "") or item.get("parent_id", "") or "-",
+            item.get("tenant_id", "") or item.get("project_id", ""),
+            str(item.get("timeline_id", "")),
+            lsn_str,
+            item.get("created_at", "")[:19] if item.get("created_at") else "-"
+        ])
+    print_table(headers, rows)
+
+
+def cmd_sql(args):
+    payload = {
+        "tenant_id": args.tenant_id,
+        "query": args.query
+    }
+    res = request("POST", "/v1/tenants/sql", body=payload)
+    if "output" in res:
+        print(res["output"].rstrip())
+        print(f"\n(Query executed in {res.get('duration_ms', 0.0):.2f}ms)")
+
+
+def cmd_psql(args):
+    port = os.environ.get("MNEMON_PROXY_PORT", "5432")
+    host = os.environ.get("MNEMON_PROXY_HOST", "127.0.0.1")
+    user = args.user or "postgres"
+    cmd = ["psql", "-h", host, "-p", str(port), "-U", user, "-d", args.tenant_id]
+    print(f"[*] Connecting to tenant '{args.tenant_id}' via L4 Proxy on {host}:{port}...")
+    try:
+        subprocess.run(cmd)
+    except FileNotFoundError:
+        print("[!] 'psql' client utility not found in PATH.", file=sys.stderr)
+
+
+def cmd_stats(args):
+    data = request("GET", "/v1/status")
+    items = normalize_list(data, "tenants", "projects")
+    if not items and isinstance(data, dict):
+        try:
+            p_data = request("GET", f"/v1/projects/{urllib.parse.quote(args.tenant_id)}")
+            if isinstance(p_data, dict):
+                items = [p_data]
+        except Exception:
+            pass
+
+    for item in items:
+        tid = item.get("tenant_id") or item.get("id") or item.get("project_id")
+        if tid == args.tenant_id:
+            cgroup_path = item.get("cgroup_path", "")
+            raw_state = str(item.get("state", "UNKNOWN")).upper()
+            cg = item.get("cgroups")
+
+            # Fallback to querying dedicated cgroup endpoint if not embedded in /v1/status
+            if not cg:
+                try:
+                    cg_resp = request("GET", f"/v1/tenants/cgroups?tenant={urllib.parse.quote(args.tenant_id)}", exit_on_error=False)
+                    if isinstance(cg_resp, dict):
+                        cg = cg_resp.get("cgroups") or cg_resp
+                except Exception:
+                    pass
+
+            freeze_state = "RUNNING"
+            mem_str = "0.00 MB"
+            peak_str = "0.00 MB"
+            cpu_str = "0.00 ms"
+            pids_str = "1"
+
+            if cg and isinstance(cg, dict):
+                is_frozen = cg.get("frozen", False) or cg.get("state") == "PAUSED" or raw_state in ("PAUSED", "FROZEN")
+                freeze_state = "FROZEN (0% CPU)" if is_frozen else "RUNNING"
+                mem_bytes = cg.get("memory_bytes", 0)
+                peak_bytes = cg.get("memory_peak_bytes", 0)
+                cpu_usec = cg.get("cpu_usage_usec", 0)
+                pids_val = cg.get("pids_current", 0)
+
+                mem_str = f"{mem_bytes / (1024 * 1024):.2f} MB" if mem_bytes else "-"
+                peak_str = f"{peak_bytes / (1024 * 1024):.2f} MB" if peak_bytes else "-"
+                cpu_str = f"{cpu_usec / 1000.0:.2f} ms" if cpu_usec else "-"
+                pids_str = str(pids_val) if pids_val else "-"
+            else:
+                if raw_state in ("PAUSED", "FROZEN"):
+                    freeze_state = "FROZEN (0% CPU)"
+                elif raw_state in ("ACTIVE", "RUNNING"):
+                    freeze_state = "RUNNING"
+
+            headers = ["METRIC", "VALUE"]
+            rows = [
+                ["Tenant ID", str(tid)],
+                ["State", str(raw_state)],
+                ["Cgroup Freeze", str(freeze_state)],
+                ["Memory Current", mem_str],
+                ["Memory Peak", peak_str],
+                ["CPU Usage Time", cpu_str],
+                ["Active PIDs", pids_str],
+                ["Assigned Port", str(item.get("port", ""))],
+                ["Backend PID", str(item.get("pid", ""))],
+                ["Active Conns", str(item.get("active_conns", 0))],
+                ["Wake Count", str(item.get("wake_count", 0))],
+                ["Last Active", str(item.get("last_active", "-"))],
+                ["Cgroup Path", str(cgroup_path or "-")]
+            ]
+            print_table(headers, rows)
+            return
+    print(f"[!] Tenant '{args.tenant_id}' not found.", file=sys.stderr)
+
+
+
+def cmd_whoami(args):
+    data = None
+    try:
+        data = request("GET", "/v1/auth/whoami", exit_on_error=False)
+    except Exception:
+        pass
+    if not data:
+        try:
+            data = request("GET", "/v1/account", exit_on_error=False)
+        except Exception:
+            pass
+    if not data:
+        data = request("GET", "/v1/auth/whoami")
+
+    print("==================================================================")
+    print("   MNEMON CONTROL PLANE: IDENTITY & RESOURCE LIMITS               ")
+    print("==================================================================")
+    if data.get("status") == "anonymous":
+        print("Status:          ANONYMOUS (Hacker Free Tier)")
+        print("Memory Limit:    256 MB (Cgroup v2 boundary)")
+    else:
+        acct_id = data.get("account_id") or data.get("tenant_id", "anonymous")
+        tier = data.get("tier", "free")
+        email = data.get("email", "-")
+        dbs = data.get("databases", 1)
+        credits = data.get("credits", "-")
+        rps = data.get("rate_limit_rps", "-")
+        print(f"Tenant / Acct:   {acct_id}")
+        if email != "-":
+            print(f"Email:           {email}")
+        print(f"Tier:            {str(tier).upper()}")
+        if credits != "-":
+            try:
+                c_val = float(credits)
+                print(f"Credits Balance: {int(c_val)} Credits (${c_val * 0.0002:.4f})")
+            except Exception:
+                print(f"Credits Balance: {credits}")
+        if rps != "-":
+            print(f"Rate Limit:      {rps} RPS")
+        print(f"Active DBs:      {dbs}")
+    print("==================================================================")
+
+
+def cmd_plans(args):
+    plans = None
+    try:
+        plans = request("GET", "/v1/billing/plans", exit_on_error=False)
+    except Exception:
+        pass
+
+    if not plans:
+        try:
+            rc = request("GET", "/v1/billing/rate-card", exit_on_error=False)
+            if isinstance(rc, dict) and "matrix" in rc:
+                headers = ["SUBSYSTEM", "OPERATION", "FEE", "USD EQUIV", "MARGIN", "GUARDRAIL"]
+                rows = []
+                for m in rc["matrix"]:
+                    rows.append([
+                        m.get("subsystem", ""),
+                        m.get("operation", "")[:35],
+                        str(m.get("credit_fee", "")),
+                        str(m.get("usd_equivalent", "")),
+                        str(m.get("gross_margin", "")),
+                        str(m.get("guardrail", "")[:30])
+                    ])
+                print(f"[✓] Unified Silicon Credit Economy ({rc.get('currency_anchor', {}).get('unit', '1 Credit')} = ${rc.get('currency_anchor', {}).get('usd_value', 0.0002):.5f}):")
+                print_table(headers, rows)
+                return
+        except Exception:
+            pass
+
+    items = normalize_list(plans, "plans", "tiers")
+    headers = ["PLAN ID", "NAME", "PRICE", "MIN ACU", "MAX ACU", "RAM"]
+    rows = []
+    for p in items:
+        price_str = f"${p.get('price_usd', 0.0):.2f}/{p.get('interval')}" if p.get('price_usd', 0.0) > 0 else "FREE"
+        rows.append([
+            p.get("id", ""),
+            p.get("name", ""),
+            price_str,
+            f"{p.get('min_acu', 0.0)} ACU",
+            f"{p.get('max_acu', 1.0)} ACU",
+            f"{p.get('max_memory_mb', 0)} MB",
+        ])
+    print_table(headers, rows)
+
+
+def cmd_login(args):
+    cfg_dir = get_config_dir()
+    os.makedirs(cfg_dir, exist_ok=True)
+    cfg_file = os.path.join(cfg_dir, "config.json")
+    with open(cfg_file, "w", encoding="utf-8") as f:
+        json.dump({"api_key": args.api_key.strip()}, f, indent=2)
+    print(f"[✓] API key saved to {cfg_file}")
+
+
+def cmd_claim(args):
+    payload = {"tenant_id": args.tenant_id, "claim_token": args.claim_token}
+    res = request("POST", "/v1/auth/claim", payload)
+    print(f"[✓] Tenant '{args.tenant_id}' claimed successfully: {res}")
+
+
+def cmd_studio(args):
+    base = get_base_url()
+    print(f"Mnemon Web Studio URL: {base}/studio")
+
+
+def cmd_mcp(args):
+    print("Mnemon MCP Server Config: command=/usr/local/bin/mnemon-mcp")
+
+
+def cmd_sdk(args):
+    print("Mnemon SDK: Python (pip install mnemon-db) | Node.js (npm i @mnemon-db/sdk)")
+
+
+def cmd_promote(args):
+    """Promote a preview/ephemeral branch to primary root with zero downtime."""
+    payload = {"tenant_id": args.tenant_id, "branch_id": args.branch}
+    res = request("POST", "/v1/tenants/branch/promote", body=payload)
+    print(f"[✓] Branch '{args.branch}' promoted to primary root (superseding previous main) with zero downtime.")
+
+def cmd_lineage(args):
+    """Display visual DAG tree of database branch lineage."""
+    project_id = args.project_id
+    res = request("GET", f"/v1/projects/{urllib.parse.quote(project_id)}/branches/lineage")
+    print(f"\n=== Mnemon-DB Branch Lineage DAG for '{project_id}' ===")
+    print(f"Root Branch:     {res.get('root_branch_id', 'main')}")
+    print(f"Total Branches:  {res.get('total_branches', 0)}")
+    print(f"Active Branches: {res.get('active_branches', 0)}\n")
+
+    nodes = res.get("nodes", [])
+    headers = ["BRANCH ID", "PARENT", "CREATED FROM LSN", "CURRENT LSN", "COW PAGES", "COW BYTES", "STATE"]
+    rows = []
+    for n in nodes:
+        rows.append([
+            n.get("name") or n.get("id"),
+            n.get("parent_id") or "-",
+            n.get("created_from_lsn", "-"),
+            n.get("current_lsn", "-"),
+            str(n.get("diverged_page_count", 0)),
+            f"{n.get('divergence_bytes', 0):,} B",
+            n.get("state", "ACTIVE"),
+        ])
+    print_table(headers, rows)
+
+    print("\nVisual DAG Hierarchy:")
+    for n in nodes:
+        indent = "  " * n.get("depth", 0)
+        prefix = "└── " if n.get("depth", 0) > 0 else "● "
+        branch_name = n.get("name") or n.get("id")
+        lsn_info = f"[forked @ {n.get('created_from_lsn')}]" if n.get("created_from_lsn") != "-" else "[root]"
+        print(f"{indent}{prefix}{branch_name} {lsn_info} (CoW: {n.get('diverged_page_count', 0)} pages)")
+
+
+def cmd_reconcile(args):
+    """Run 3-way schema reconciliation before merging branch into target."""
+    project_id = args.project_id
+    branch = args.branch
+    target = args.target or "main"
+    payload = {"target_branch": target}
+    res = request("POST", f"/v1/projects/{urllib.parse.quote(project_id)}/branches/{urllib.parse.quote(branch)}/reconcile", body=payload)
+
+    verdict = res.get("safety_verdict", "UNKNOWN")
+    can_merge = res.get("can_auto_merge", False)
+    status_icon = "✓" if can_merge else "✗"
+    print(f"[{status_icon}] 3-Way Schema Reconciliation: '{branch}' -> '{target}'")
+    print(f"    Safety Verdict:     {verdict}")
+    print(f"    Can Auto-Merge:     {'YES (Zero Downtime)' if can_merge else 'NO (Conflicts Blocked)'}")
+    print(f"    Estimated Lock Ms:  {res.get('estimated_lock_ms', 0)}ms")
+
+    conflicts = res.get("conflicts", [])
+    if conflicts:
+        print("\n=== Detected Schema Conflicts ===")
+        for c in conflicts:
+            print(f"  • [{c.get('type')}] Table: {c.get('table')}, Column: {c.get('column', '-')}")
+            print(f"    Description: {c.get('description')}")
+            print(f"    Resolution:  {c.get('resolution')}")
+
+    if res.get("generated_ddl"):
+        print("\n=== Generated Reconciled Migration DDL ===")
+        print(res.get("generated_ddl"))
+
+    if res.get("rollback_ddl"):
+        print("\n=== Automated Rollback DDL ===")
+        print(res.get("rollback_ddl"))
+
+
+def cmd_advisor(args):
+    """Inspect slow queries, circuit breaker status, and index advice."""
+    project_id = args.project_id
+    res = request("GET", f"/v1/projects/{urllib.parse.quote(project_id)}/queries/advisor")
+    print(f"=== Mnemon-DB Query Performance & FinOps Advisor ===")
+    print(f"Project ID:              {res.get('project_id', project_id)}")
+    print(f"Circuit Breaker Active:  {res.get('circuit_breaker_active')}")
+    print(f"Statement Timeout:       {res.get('statement_timeout_ms')}ms (10s hard kill)")
+    print(f"Slow Query Tax Rate:     {res.get('slow_query_tax_rate_cr_per_s')} Credits/sec (>100ms CPU)")
+    print(f"Queries Analyzed:        {res.get('queries_analyzed')}\n")
+
+    slow = res.get("slow_queries_detected", [])
+    if slow:
+        print("Detected Slow Queries:")
+        headers = ["QUERY ID", "CALLS", "MEAN (MS)", "CPU (MS)", "CACHE HIT", "KILLED", "TAX (CR)"]
+        rows = []
+        for q in slow:
+            rows.append([
+                q.get("query_id", ""),
+                str(q.get("calls", 0)),
+                f"{q.get('mean_time_ms', 0):.1f}",
+                f"{q.get('cpu_time_ms', 0):.1f}",
+                f"{q.get('cache_hit_pct', 0):.1f}%",
+                "YES (10s Timeout)" if q.get("is_circuit_killed") else "NO",
+                f"{q.get('tax_levied_cr', 0):.2f}",
+            ])
+        print_table(headers, rows)
+
+    recs = res.get("index_recommendations", [])
+    if recs:
+        print("\nAutomated Index Recommendations:")
+        for r in recs:
+            print(f"  • Table: {r.get('table')}, Column: {r.get('column')} ({r.get('index_type')})")
+            print(f"    Speedup: {r.get('estimated_speedup')}")
+            print(f"    Reason:  {r.get('reason')}")
+            print(f"    DDL:     {r.get('suggested_ddl')}\n")
+
+
+def cmd_import(args):
+    """Zero-downtime 1-click database importer from Neon/Supabase."""
+    project_id = args.project_id
+    if args.action == "start":
+        payload = {"source_url": args.source}
+        res = request("POST", f"/v1/projects/{urllib.parse.quote(project_id)}/import", body=payload)
+        print(f"[✓] Zero-Downtime Import Initiated for '{project_id}':")
+        print(f"    Import ID:        {res.get('import_id')}")
+        print(f"    Source Host:      {res.get('source_host')}")
+        print(f"    Phase:            {res.get('phase')}")
+        print(f"    Progress:         {res.get('progress_pct')}%")
+        print(f"    Tables Synced:    {res.get('tables_completed')} / {res.get('tables_total')}")
+        print(f"    Rows Transferred: {res.get('rows_transferred'):,}")
+        print(f"    Replication Lag:  {res.get('replication_lag_ms')}ms")
+        print(f"    Message:          {res.get('message')}")
+    elif args.action == "status":
+        res = request("GET", f"/v1/projects/{urllib.parse.quote(project_id)}/import/status")
+        print(f"[✓] Import Status for '{project_id}':")
+        print(f"    Phase:            {res.get('phase')}")
+        print(f"    Progress:         {res.get('progress_pct')}%")
+        print(f"    Replication Lag:  {res.get('replication_lag_ms')}ms")
+        print(f"    Cutover Direct:   {res.get('cutover_direct_url')}")
+        print(f"    Cutover Pooled:   {res.get('cutover_pooled_url')}")
+    elif args.action == "cutover":
+        res = request("POST", f"/v1/projects/{urllib.parse.quote(project_id)}/import/cutover")
+        print(f"[✓] Cutover Complete! {res.get('message')}")
+        print(f"    Cutover Latency:  {res.get('cutover_time_ms')}ms")
+        print(f"    Direct URL:       {res.get('direct_connection')}")
+        print(f"    Pooled URL:       {res.get('pooled_connection')}")
+
+
+def cmd_quantize(args):
+    """Configure pgvector + HNSW-PQ vector quantization with disk-spill indexing."""
+    project_id = args.project_id
+    if args.action == "set":
+        payload = {
+            "table": args.table,
+            "column": args.column,
+            "dimensions": args.dimensions,
+            "quantization_type": args.type,
+            "disk_spill": args.disk_spill,
+        }
+        res = request("POST", f"/v1/projects/{urllib.parse.quote(project_id)}/vector/quantize", body=payload)
+        print(f"[✓] Vector Quantization Configured for '{project_id}':")
+        print(f"    Table.Column:      {res.get('table')}.{res.get('column')}")
+        print(f"    Dimensions:        {res.get('dimensions')}")
+        print(f"    Type:              {res.get('quantization_type')} (PQ M={res.get('pq_m_subvectors')})")
+        print(f"    Compression Ratio: {res.get('compression_ratio')}")
+        print(f"    Memory Footprint:  {res.get('initial_ram_kb'):,} KB -> {res.get('compressed_ram_kb'):,} KB")
+        print(f"    Estimated Recall:  {res.get('estimated_recall')}")
+        print(f"    Generated DDL:     {res.get('index_ddl')}")
+    elif args.action == "stats":
+        res = request("GET", f"/v1/projects/{urllib.parse.quote(project_id)}/vector/stats")
+        print(f"[✓] Vector Index Stats for '{project_id}':")
+        print(f"    Total Vectors:     {res.get('total_vectors'):,}")
+        print(f"    Dimensions:        {res.get('dimensions')}")
+        print(f"    Uncompressed RAM:  {res.get('uncompressed_ram_mb'):.1f} MB")
+        print(f"    Quantized RAM:     {res.get('quantized_ram_mb'):.1f} MB")
+        print(f"    Host RAM Saved:    {res.get('ram_saved_pct')}%")
+        print(f"    Index Mode:        {res.get('index_mode')}")
+
+
+def cmd_pooler(args):
+    """Inspect or configure PgBouncer connection pooler."""
+    if args.mode or args.max_size:
+        payload = {
+            "tenant_id": args.tenant_id,
+            "pool_mode": args.mode or "session",
+            "max_pool_size": args.max_size or 10,
+        }
+        res = request("POST", f"/v1/tenants/pooler?tenant_id={urllib.parse.quote(args.tenant_id)}", body=payload)
+        print(f"[✓] Connection pooler updated: mode={res.get('pool_mode')}, max_size={res.get('max_pool_size')}")
+    else:
+        res = request("GET", f"/v1/tenants/pooler?tenant_id={urllib.parse.quote(args.tenant_id)}")
+        headers = ["METRIC", "VALUE"]
+        rows = [
+            ["Pool Mode", res.get("pool_mode", "-")],
+            ["Max Pool Size", str(res.get("max_pool_size", "-"))],
+            ["Active Connections", str(res.get("active_connections", 0))],
+            ["Idle Connections", str(res.get("idle_connections", 0))],
+            ["Waiting Clients", str(res.get("waiting_clients", 0))],
+            ["Cache Hit Rate", f"{float(res.get('cache_hit_rate', 0.0))*100:.1f}%"],
+            ["Avg Latency", f"{res.get('avg_latency_us', 0)} µs"],
+            ["Health Status", res.get("status", "healthy")],
+        ]
+        print_table(headers, rows)
+
+def cmd_tables(args):
+    """List tables, columns, and constraints for a tenant database."""
+    res = request("GET", f"/v1/tenants/schema/tables?tenant_id={urllib.parse.quote(args.tenant_id)}")
+    tables = res.get("tables", [])
+    print(f"[✓] Found {len(tables)} table(s) in tenant '{args.tenant_id}':")
+    for tbl in tables:
+        print(f"\n  • Table: {tbl.get('schema')}.{tbl.get('name')} (est. rows: {tbl.get('row_count_estimate', 0)})")
+        cols = tbl.get("columns", [])
+        for c in cols:
+            pk = " [PK]" if c.get("is_primary_key") else ""
+            print(f"      - {c.get('name')}: {c.get('type')}{pk}")
+
+def cmd_extensions(args):
+    """Inspect or toggle PostgreSQL extensions."""
+    if args.action == "list":
+        res = request("GET", f"/v1/tenants/extensions?tenant_id={urllib.parse.quote(args.tenant_id)}")
+        exts = res.get("extensions", [])
+        headers = ["EXTENSION", "VERSION", "INSTALLED", "DESCRIPTION"]
+        rows = [[e.get("name"), e.get("version"), "YES" if e.get("installed") else "NO", e.get("description")] for e in exts]
+        print_table(headers, rows)
+    elif args.action in ("enable", "disable"):
+        enable = (args.action == "enable")
+        payload = {"tenant_id": args.tenant_id, "name": args.name, "enabled": enable}
+        res = request("POST", "/v1/tenants/extensions", body=payload)
+        print(f"[✓] {res.get('message', 'Extension updated')}")
+
+def cmd_slow_queries(args):
+    """Inspect slow query execution logs and cache metrics."""
+    res = request("GET", f"/v1/tenants/queries/slow?tenant_id={urllib.parse.quote(args.tenant_id)}")
+    queries = res.get("queries", [])
+    headers = ["CALLS", "MEAN (MS)", "CACHE HIT", "QUERY"]
+    rows = [[str(q.get("calls", 0)), f"{q.get('mean_time_ms', 0.0):.2f}", f"{q.get('cache_hit_pct', 0.0)}%", q.get("query", "")[:50]] for q in queries]
+    print_table(headers, rows)
+
+def cmd_admin(args):
+    """Administrative fleet governance and multi-tenant management."""
+    action = args.admin_action
+    if action == "fleet":
+        res = request("GET", "/v1/admin/fleet")
+        print("[+] Mnemon Global Fleet Status:")
+        for k, v in res.items():
+            print(f"    {k}: {v}")
+    elif action == "tenants":
+        res = request("GET", "/v1/admin/tenants")
+        print(f"[+] Total Tenants: {res.get('tenant_count', 0)}")
+        for tid, projs in res.get("tenants", {}).items():
+            print(f"  • Tenant {tid}:")
+            for p in projs:
+                print(f"      - {p.get('project_id')} ({p.get('name')}): State={p.get('state')}, Branches={p.get('branch_count')}")
+    elif action == "quarantine":
+        res = request("POST", f"/v1/admin/tenants/{args.target_id}/quarantine")
+        print(f"[!] {res.get('message', 'Quarantined')}")
+    elif action == "unquarantine":
+        res = request("POST", f"/v1/admin/tenants/{args.target_id}/unquarantine")
+        print(f"[+] {res.get('message', 'Unquarantined')}")
+    elif action == "kill-query":
+        res = request("POST", "/v1/admin/queries/kill", body={"project_id": args.project_id, "pid": args.pid})
+        print(f"[!] {res.get('message', 'Query killed')}")
+    elif action == "reap-branches":
+        res = request("POST", "/v1/admin/branches/reap")
+        print(f"[+] {res.get('message', 'Branches reaped')}")
+
+def cmd_scaling(args):
+    """Inspect or configure Aurora Serverless v2 ACU capacity limits."""
+    project_id = args.project_id
+    if args.action == "get":
+        res = request("GET", f"/v1/projects/{urllib.parse.quote(project_id)}/scaling")
+        sc = res.get("scaling", res) if isinstance(res, dict) else {}
+        headers = ["FIELD", "VALUE"]
+        rows = [
+            ["Project ID", res.get("project_id", project_id) if isinstance(res, dict) else project_id],
+            ["Min ACU", f"{sc.get('min_acu', 0.0):.1f} ACU ({int(sc.get('min_acu', 0.0)*2)} GB RAM)"],
+            ["Max ACU", f"{sc.get('max_acu', 16.0):.1f} ACU ({int(sc.get('max_acu', 16.0)*2)} GB RAM)"],
+            ["Current ACU", f"{sc.get('current_acu', 0.0):.1f} ACU"],
+            ["Scale-to-Zero", "ENABLED (Suspends to 0% CPU)" if sc.get("scale_to_zero_enabled") else "DISABLED (Always Warm)"],
+            ["Idle Suspend", f"{sc.get('idle_suspend_seconds', 300)}s"],
+            ["Auto Freeze Profile", str(sc.get("auto_freeze_profile", "balanced_15s"))],
+            ["Circuit Breaker", f"{sc.get('slow_query_circuit_breaker_ms', 5000)}ms"],
+            ["Branch TTL", f"{sc.get('branch_ttl_hours', 24)}h"],
+            ["Tier", str(sc.get("tier", "free")).upper()],
+        ]
+        print_table(headers, rows)
+    elif args.action == "set":
+        payload = {}
+        if args.min_acu is not None:
+            payload["min_acu"] = args.min_acu
+        if args.max_acu is not None:
+            payload["max_acu"] = args.max_acu
+        if args.scale_to_zero is not None:
+            payload["scale_to_zero_enabled"] = args.scale_to_zero
+        if args.idle_suspend is not None:
+            payload["idle_suspend_seconds"] = args.idle_suspend
+        if args.tier is not None:
+            payload["tier"] = args.tier
+
+        res = request("POST", f"/v1/projects/{urllib.parse.quote(project_id)}/scaling", body=payload)
+        sc = res.get("scaling", res) if isinstance(res, dict) else {}
+        print(f"[✓] Autoscaling updated for '{project_id}':")
+        print(f"    Min ACU:       {sc.get('min_acu', 0.0):.1f} ACU")
+        print(f"    Max ACU:       {sc.get('max_acu', 16.0):.1f} ACU")
+        print(f"    Scale-to-Zero: {sc.get('scale_to_zero_enabled')}")
+        print(f"    Idle Suspend:  {sc.get('idle_suspend_seconds')}s")
+
+def cmd_cdc(args):
+    """Lethe Real-time Change Data Capture (CDC) streaming and introspection."""
+    project_id = args.project_id
+    if args.action == "stats":
+        res = request("GET", f"/v1/projects/{urllib.parse.quote(project_id)}/cdc/stats")
+        headers = ["METRIC", "VALUE"]
+        rows = [
+            ["Project ID", res.get("project_id", project_id)],
+            ["Total Ingested", f"{res.get('total_ingested', 0):,}"],
+            ["Total Dispatched", f"{res.get('total_dispatched', 0):,}"],
+            ["Active Subscribers", str(res.get("active_subscribers", 0))],
+            ["Buffered Events", f"{res.get('buffered_events', 0)} / {res.get('max_buffer_size', 5000)}"],
+            ["Dropped Events", str(res.get("drop_count", 0))],
+        ]
+        print_table(headers, rows)
+
+    elif args.action == "publish":
+        record = json.loads(args.record) if args.record else {}
+        old_record = json.loads(args.old_record) if args.old_record else None
+        payload = {
+            "table": args.table,
+            "action": args.action_type.upper(),
+            "record": record,
+            "old_record": old_record,
+        }
+        res = request("POST", f"/v1/projects/{urllib.parse.quote(project_id)}/cdc/publish", body=payload)
+        print(f"[✓] Published CDC event '{res.get('id')}' to table '{args.table}' (Dispatched to {res.get('dispatched', 0)} active listeners)")
+
+    elif args.action == "stream":
+        url = f"{get_base_url()}/v1/projects/{urllib.parse.quote(project_id)}/cdc/stream?table={urllib.parse.quote(args.table)}&action={urllib.parse.quote(args.event_action)}"
+        if args.replay_since:
+            url += f"&replay_since={args.replay_since}"
+        print(f"[*] Connecting to Lethe CDC real-time stream for project '{project_id}'...")
+        print(f"[*] Filters: Table='{args.table}', Action='{args.event_action}'")
+        print("    Press Ctrl+C to disconnect.\n" + "-" * 70)
+        req = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                for line in resp:
+                    line_str = line.decode("utf-8").strip()
+                    if line_str.startswith("data:"):
+                        payload = line_str[5:].strip()
+                        try:
+                            parsed = json.loads(payload)
+                            if parsed.get("type") == "connected":
+                                print(f"[+] Connected! Subscriber ID: {parsed.get('sub_id')}\n")
+                            else:
+                                action = parsed.get("action", "MUTATION")
+                                table = parsed.get("table", "")
+                                rec = json.dumps(parsed.get("record", {}))
+                                print(f"[{datetime.now().strftime('%H:%M:%S')}] [{action}] {table} :: {rec}")
+                        except Exception:
+                            print(payload)
+        except KeyboardInterrupt:
+            print("\n[*] Disconnected from CDC stream.")
+        except Exception as e:
+            print(f"[!] CDC Stream error: {e}", file=sys.stderr)
+            sys.exit(1)
+
+
+def cmd_snapshot(args):
+    tenant_id = args.tenant_id
+    action = args.action
+
+    try:
+        if action == "create":
+            payload = {}
+            if getattr(args, "name", None):
+                payload["name"] = args.name
+            if getattr(args, "branch", None):
+                payload["branch_id"] = args.branch
+            res = api_post(f"/v1/projects/{tenant_id}/snapshots", payload)
+            print(f"[✓] Created Database Snapshot:")
+            print(f"    ID:         {res.get('id')}")
+            print(f"    Name:       {res.get('name')}")
+            print(f"    Branch:     {res.get('branch_id')}")
+            print(f"    LSN:        {res.get('lsn')}")
+            print(f"    Created At: {res.get('created_at')}")
+        elif action == "list":
+            res = api_get(f"/v1/projects/{tenant_id}/snapshots")
+            snapshots = res.get("snapshots", []) if isinstance(res, dict) else res
+            if not snapshots:
+                print(f"No snapshots found for database {tenant_id}.")
+                return
+            headers = ["SNAPSHOT ID", "NAME", "BRANCH", "LSN", "CREATED AT"]
+            rows = []
+            for s in snapshots:
+                rows.append([
+                    s.get("id", ""),
+                    s.get("name", ""),
+                    s.get("branch_id", ""),
+                    s.get("lsn", 0),
+                    str(s.get("created_at", ""))[:19]
+                ])
+            print_table(headers, rows)
+    except Exception as e:
+        print(f"[!] Database snapshot operation failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_pitr(args):
+    tenant_id = args.tenant_id
+    action = args.action
+
+    try:
+        if action == "timelines":
+            res = api_get(f"/v1/projects/{tenant_id}/pitr/timelines")
+            print(f"[✓] PITR Restoration Windows for {tenant_id}:")
+            print(f"    Retention Period: {res.get('retention_days', 7)} days")
+            print(f"    Current LSN:      {res.get('current_lsn', 0)}")
+            print(f"    Earliest LSN:     {res.get('earliest_lsn', 0)}")
+            print(f"    Earliest Time:    {res.get('earliest_time', '')}")
+            print(f"    Latest Time:      {res.get('latest_time', '')}")
+            timelines = res.get("timelines", [])
+            if timelines:
+                print("\n    Timelines:")
+                headers = ["TIMELINE ID", "PARENT", "SWITCH LSN", "START TIME"]
+                rows = []
+                for tl in timelines:
+                    rows.append([
+                        tl.get("timeline_id", ""),
+                        tl.get("parent_id", ""),
+                        tl.get("switch_lsn", 0),
+                        str(tl.get("start_time", ""))[:19]
+                    ])
+                print_table(headers, rows)
+        elif action == "restore":
+            payload = {"target_branch": args.target_branch}
+            if getattr(args, "lsn", None) is not None:
+                payload["target_lsn"] = args.lsn
+            res = api_post(f"/v1/projects/{tenant_id}/pitr/restore", payload)
+            print(f"[✓] Restored Point-In-Time Recovery Branch:")
+            print(f"    Project ID:    {res.get('project_id')}")
+            print(f"    Target Branch: {res.get('target_branch')}")
+            print(f"    Restored LSN:  {res.get('restored_lsn')}")
+            print(f"    Status:        {res.get('status')}")
+            print(f"    Message:       {res.get('message')}")
+    except Exception as e:
+        print(f"[!] PITR operation failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_version(args):
+    print("Mnemon CLI v2.0.0 (Dual-Arch: Linux x86_64 / AWS Graviton4 ARM64)")
+
+
+def normalize_argv(argv: List[str]) -> List[str]:
+    """
+    Normalizes positional argument inversions so both syntaxes work seamlessly:
+      mnemon scale <project_id> get   <==>  mnemon scale get <project_id>
+      mnemon cdc <project_id> stats   <==>  mnemon cdc stats <project_id>
+      mnemon snapshot <id> list       <==>  mnemon snapshot list <id>
+      mnemon pitr <id> timelines      <==>  mnemon pitr timelines <id>
+    """
+    if len(argv) < 3:
+        return argv
+
+    new_argv = list(argv)
+    subcmd = new_argv[1]
+
+    subcmd_actions = {
+        "scale": {"get", "set"},
+        "cdc": {"stream", "publish", "stats"},
+        "snapshot": {"create", "list"},
+        "pitr": {"timelines", "restore"},
+        "import": {"start", "status", "cutover"},
+        "quantize": {"set", "stats"},
+    }
+
+    if subcmd in subcmd_actions:
+        actions = subcmd_actions[subcmd]
+        if len(new_argv) >= 4 and new_argv[2] not in actions and not new_argv[2].startswith("-"):
+            if new_argv[3] in actions:
+                new_argv[2], new_argv[3] = new_argv[3], new_argv[2]
+
+    return new_argv
+
+
+def main():
+    sys.argv = normalize_argv(sys.argv)
+    parser = argparse.ArgumentParser(prog="mnemon", description="Mnemon Serverless PostgreSQL CLI")
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    # mnemon list
+    p_list = subparsers.add_parser("list", help="List all managed database tenants")
+    p_list.set_defaults(func=cmd_list)
+
+    # mnemon create <tenant_id>
+    p_create = subparsers.add_parser("create", help="Provision a new tenant database")
+    p_create.add_argument("tenant_id", help="Unique tenant identifier")
+    p_create.add_argument("--memory-mb", type=int, default=512, help="Memory limit in MB")
+    p_create.add_argument("--vcpus", type=int, default=2, help="vCPU quota")
+    p_create.add_argument("--port", type=int, default=0, help="Custom port (0 = auto)")
+    p_create.set_defaults(func=cmd_create)
+
+    # mnemon freeze <tenant_id>
+    p_freeze = subparsers.add_parser("freeze", help="Freeze tenant into 0.0%% CPU scale-to-zero")
+    p_freeze.add_argument("tenant_id", help="Tenant identifier")
+    p_freeze.set_defaults(func=cmd_freeze)
+
+    # mnemon resume <tenant_id>
+    p_resume = subparsers.add_parser("resume", help="Wake tenant in <200µs")
+    p_resume.add_argument("tenant_id", help="Tenant identifier")
+    p_resume.set_defaults(func=cmd_resume)
+
+    # mnemon branch <tenant_id> <new_branch> [--parent main]
+    p_branch = subparsers.add_parser("branch", help="Create instant CoW reflink branch")
+    p_branch.add_argument("tenant_id", help="Tenant identifier")
+    p_branch.add_argument("new_branch", help="New branch identifier")
+    p_branch.add_argument("--parent", default="main", help="Parent branch (default: main)")
+    p_branch.add_argument("--lsn", type=lambda x: int(x, 0), default=0, help="Target LSN")
+    p_branch.set_defaults(func=cmd_branch)
+
+    # mnemon promote <tenant_id> <branch>
+    p_promote = subparsers.add_parser("promote", help="Promote a preview branch to primary root (zero-downtime)")
+    p_promote.add_argument("tenant_id", help="Tenant identifier")
+    p_promote.add_argument("branch", help="Branch identifier to promote")
+    p_promote.set_defaults(func=cmd_promote)
+
+    # mnemon pooler <tenant_id> [--mode transaction|session] [--max-size N]
+    p_pooler = subparsers.add_parser("pooler", help="Inspect or dynamically tune PgBouncer connection pooler")
+    p_pooler.add_argument("tenant_id", help="Tenant identifier")
+    p_pooler.add_argument("--mode", choices=["transaction", "session"], help="Pooling mode")
+    p_pooler.add_argument("--max-size", type=int, help="Maximum pool connections")
+    p_pooler.set_defaults(func=cmd_pooler)
+
+    # mnemon scale <project_id> {get,set} (Aurora Serverless v2 ACUs)
+    p_scale = subparsers.add_parser("scale", help="Inspect or update Aurora Serverless v2 ACU capacity scaling")
+    p_scale_sub = p_scale.add_subparsers(dest="action", required=True)
+    p_sc_get = p_scale_sub.add_parser("get", help="Inspect ACU limits and scale-to-zero status")
+    p_sc_get.add_argument("project_id", help="Database project / tenant identifier")
+
+    p_sc_set = p_scale_sub.add_parser("set", help="Configure ACU autoscaling limits and warm buffer")
+    p_sc_set.add_argument("project_id", help="Database project / tenant identifier")
+    p_sc_set.add_argument("--min-acu", type=float, help="Minimum ACU capacity (0.0 for scale-to-zero, >=1.0 for warm buffer)")
+    p_sc_set.add_argument("--max-acu", type=float, help="Maximum ACU capacity burst limit (e.g. 1.0, 16.0, 128.0)")
+    stz_grp = p_sc_set.add_mutually_exclusive_group()
+    stz_grp.add_argument("--scale-to-zero", dest="scale_to_zero", action="store_true", default=None, help="Enable automatic scale-to-zero when idle")
+    stz_grp.add_argument("--no-scale-to-zero", dest="scale_to_zero", action="store_false", default=None, help="Keep compute permanently warm (Pro/Enterprise)")
+    p_sc_set.add_argument("--idle-suspend", type=int, help="Seconds before idle suspension (default: 300)")
+    p_sc_set.add_argument("--tier", choices=["free", "pro", "enterprise"], help="Subscription tier for validation")
+    p_scale.set_defaults(func=cmd_scaling)
+
+    # mnemon cdc <project_id> {stream,publish,stats}
+    p_cdc = subparsers.add_parser("cdc", help="Lethe Real-time Change Data Capture (CDC) streaming and introspection")
+    p_cdc_sub = p_cdc.add_subparsers(dest="action", required=True)
+    p_cdc_stream = p_cdc_sub.add_parser("stream", help="Stream live row mutations over real-time SSE stream")
+    p_cdc_stream.add_argument("project_id", help="Database project / tenant identifier")
+    p_cdc_stream.add_argument("--table", default="*", help="Filter by table name (default: *)")
+    p_cdc_stream.add_argument("--action", dest="event_action", default="*", help="Filter by action (INSERT, UPDATE, DELETE, default: *)")
+    p_cdc_stream.add_argument("--replay-since", type=int, help="Optional LSN to replay missed events from buffer")
+    p_cdc_pub = p_cdc_sub.add_parser("publish", help="Publish a simulated database mutation event")
+    p_cdc_pub.add_argument("project_id", help="Database project / tenant identifier")
+    p_cdc_pub.add_argument("--table", required=True, help="Table name")
+    p_cdc_pub.add_argument("--action", dest="action_type", default="INSERT", choices=["INSERT", "UPDATE", "DELETE"], help="Mutation action")
+    p_cdc_pub.add_argument("--record", required=True, help="JSON string representing the new row state")
+    p_cdc_pub.add_argument("--old-record", help="JSON string representing previous row state (for UPDATE/DELETE)")
+    p_cdc_stats = p_cdc_sub.add_parser("stats", help="Inspect real-time CDC throughput, buffer utilization, and subscriber count")
+    p_cdc_stats.add_argument("project_id", help="Database project / tenant identifier")
+    p_cdc.set_defaults(func=cmd_cdc)
+
+    # mnemon tables <tenant_id>
+    p_tables = subparsers.add_parser("tables", help="Inspect schema tables and columns")
+    p_tables.add_argument("tenant_id", help="Tenant identifier")
+    p_tables.set_defaults(func=cmd_tables)
+
+    # mnemon ext <tenant_id> <action> [name]
+    p_ext = subparsers.add_parser("ext", help="Manage PostgreSQL extensions (vector, pg_search, postgis)")
+    p_ext.add_argument("tenant_id", help="Tenant identifier")
+    p_ext.add_argument("action", choices=["list", "enable", "disable"], help="Action to perform")
+    p_ext.add_argument("name", nargs="?", default="", help="Extension name (for enable/disable)")
+    p_ext.set_defaults(func=cmd_extensions)
+
+    # mnemon slow-queries <tenant_id>
+    p_slow = subparsers.add_parser("slow-queries", help="Inspect slow query diagnostics and cache hit rates")
+    p_slow.add_argument("tenant_id", help="Tenant identifier")
+    p_slow.set_defaults(func=cmd_slow_queries)
+
+    # mnemon diff <tenant_id> --branch <id> [--parent main]
+    p_diff = subparsers.add_parser("diff", help="Show schema diff between a branch and its parent")
+    p_diff.add_argument("tenant_id", help="Tenant identifier")
+    p_diff.add_argument("--branch", required=True, help="Branch ID to compare")
+    p_diff.add_argument("--parent", default=None, help="Parent branch name (default: main)")
+    p_diff.set_defaults(func=cmd_diff)
+
+    # mnemon reset <tenant_id> <branch>
+    p_reset = subparsers.add_parser("reset", help="One-click branch reset to parent state")
+    p_reset.add_argument("tenant_id", help="Tenant identifier")
+    p_reset.add_argument("branch", help="Branch ID to reset")
+    p_reset.set_defaults(func=cmd_reset)
+
+    # mnemon time-travel <tenant_id> <new_branch> --time <RFC3339> [--parent main]
+    p_tt = subparsers.add_parser("time-travel", help="PITR: create branch from a point in time")
+    p_tt.add_argument("tenant_id", help="Tenant identifier")
+    p_tt.add_argument("new_branch", help="Name for the new time-travel branch")
+    p_tt.add_argument("--time", required=True, help="Target RFC3339 timestamp (e.g. 2026-11-13T10:00:00Z)")
+    p_tt.add_argument("--parent", default=None, help="Source branch (default: main)")
+    p_tt.set_defaults(func=cmd_time_travel)
+
+    # mnemon search <tenant_id> <table> <query> [--columns id,title,content]
+    p_search = subparsers.add_parser("search", help="BM25 / tsvector full-text search on a table")
+    p_search.add_argument("tenant_id", help="Tenant identifier")
+    p_search.add_argument("table", help="Table to search")
+    p_search.add_argument("query", help="Search query string")
+    p_search.add_argument("--columns", default=None, help="Comma-separated columns to include (default: all)")
+    p_search.set_defaults(func=cmd_search)
+
+    # mnemon branches [--tenant <id>]
+    p_branches = subparsers.add_parser("branches", help="List all database branches")
+    p_branches.add_argument("--tenant", default=None, help="Filter by tenant ID")
+    p_branches.set_defaults(func=cmd_branches)
+
+    # mnemon sql <tenant_id> "<query>"
+    p_sql = subparsers.add_parser("sql", help="Execute SQL on tenant database")
+    p_sql.add_argument("tenant_id", help="Tenant identifier")
+    p_sql.add_argument("query", help="SQL query")
+    p_sql.set_defaults(func=cmd_sql)
+
+    # mnemon psql <tenant_id>
+    p_psql = subparsers.add_parser("psql", help="Open interactive psql console through L4 Proxy")
+    p_psql.add_argument("tenant_id", help="Tenant identifier")
+    p_psql.add_argument("--user", default="postgres", help="Database user")
+    p_psql.set_defaults(func=cmd_psql)
+
+    # mnemon stats <tenant_id>
+    p_stats = subparsers.add_parser("stats", help="Show tenant Cgroups and scaling stats")
+    p_stats.add_argument("tenant_id", help="Tenant identifier")
+    p_stats.set_defaults(func=cmd_stats)
+
+    
+    # mnemon whoami
+    p_whoami = subparsers.add_parser("whoami", help="Display account identity and tier")
+    p_whoami.set_defaults(func=cmd_whoami)
+
+    # mnemon plans
+    p_plans = subparsers.add_parser("plans", help="List SaaS subscription tiers")
+    p_plans.set_defaults(func=cmd_plans)
+
+    # mnemon login <api_key>
+    p_login = subparsers.add_parser("login", help="Authenticate CLI with an API key")
+    p_login.add_argument("api_key", help="Mnemon API key")
+    p_login.set_defaults(func=cmd_login)
+
+    # mnemon claim <tenant_id> <claim_token>
+    p_claim = subparsers.add_parser("claim", help="Claim an anonymous tenant")
+    p_claim.add_argument("tenant_id", help="Tenant identifier")
+    p_claim.add_argument("claim_token", help="Claim token")
+    p_claim.set_defaults(func=cmd_claim)
+
+    # mnemon studio
+    p_studio = subparsers.add_parser("studio", help="Web Studio management console")
+    p_studio.set_defaults(func=cmd_studio)
+
+    # mnemon mcp
+    p_mcp = subparsers.add_parser("mcp", help="Output MCP server config")
+    p_mcp.set_defaults(func=cmd_mcp)
+
+    # mnemon sdk
+    p_sdk = subparsers.add_parser("sdk", help="Display SDK quick-start documentation")
+    p_sdk.set_defaults(func=cmd_sdk)
+
+    # mnemon version
+    p_ver = subparsers.add_parser("version", help="Print CLI version")
+    p_ver.set_defaults(func=cmd_version)
+
+    # mnemon snapshot <tenant_id> {create,list}
+    p_snap = subparsers.add_parser("snapshot", help="Manage point-in-time database cluster snapshots")
+    p_snap_sub = p_snap.add_subparsers(dest="action", required=True)
+    p_snap_create = p_snap_sub.add_parser("create", help="Create a point-in-time database snapshot")
+    p_snap_create.add_argument("tenant_id", help="Tenant or project identifier")
+    p_snap_create.add_argument("--name", help="Snapshot name")
+    p_snap_create.add_argument("--branch", default="main", help="Source branch (default: main)")
+    p_snap_list = p_snap_sub.add_parser("list", help="List all snapshots for a tenant")
+    p_snap_list.add_argument("tenant_id", help="Tenant or project identifier")
+    p_snap.set_defaults(func=cmd_snapshot)
+
+    # mnemon pitr <tenant_id> {timelines,restore}
+    p_pitr = subparsers.add_parser("pitr", help="Point-In-Time Recovery (PITR) via continuous WAL archiving")
+    p_pitr_sub = p_pitr.add_subparsers(dest="action", required=True)
+    p_pitr_time = p_pitr_sub.add_parser("timelines", help="Retrieve available PITR restoration timelines and LSN windows")
+    p_pitr_time.add_argument("tenant_id", help="Tenant or project identifier")
+    p_pitr_rest = p_pitr_sub.add_parser("restore", help="Restore database to specific LSN on a fresh branch")
+    p_pitr_rest.add_argument("tenant_id", help="Tenant or project identifier")
+    p_pitr_rest.add_argument("target_branch", help="New target branch name for restored database")
+    p_pitr_rest.add_argument("--lsn", type=lambda x: int(x, 0), help="Target LSN integer (omit for current head)")
+    p_pitr.set_defaults(func=cmd_pitr)
+
+    # mnemon admin
+    p_adm = subparsers.add_parser("admin", help="Administrative fleet and tenant governance")
+    p_adm_sub = p_adm.add_subparsers(dest="admin_action", required=True)
+    p_adm_fleet = p_adm_sub.add_parser("fleet", help="Show global cluster fleet overview")
+    p_adm_tenants = p_adm_sub.add_parser("tenants", help="List all tenant database clusters")
+    p_adm_quar = p_adm_sub.add_parser("quarantine", help="Quarantine and freeze tenant database")
+    p_adm_quar.add_argument("target_id", help="Tenant or Project ID")
+    p_adm_unquar = p_adm_sub.add_parser("unquarantine", help="Unfreeze and restore tenant database")
+    p_adm_unquar.add_argument("target_id", help="Tenant or Project ID")
+    p_adm_kill = p_adm_sub.add_parser("kill-query", help="Terminate backend PostgreSQL query")
+    p_adm_kill.add_argument("project_id", help="Target project ID")
+    p_adm_kill.add_argument("pid", type=int, help="Backend PostgreSQL PID")
+    p_adm_reap = p_adm_sub.add_parser("reap-branches", help="Reap stale ephemeral preview branches")
+    p_adm.set_defaults(func=cmd_admin)
+
+    # mnemon lineage <project_id>
+    p_lineage = subparsers.add_parser("lineage", help="Display visual DAG tree of branch ancestry")
+    p_lineage.add_argument("project_id", help="Database project / tenant identifier")
+    p_lineage.set_defaults(func=cmd_lineage)
+
+    # mnemon reconcile <project_id> <branch> [--target main]
+    p_recon = subparsers.add_parser("reconcile", help="3-way schema reconciliation before merge")
+    p_recon.add_argument("project_id", help="Database project / tenant identifier")
+    p_recon.add_argument("branch", help="Source branch to reconcile")
+    p_recon.add_argument("--target", default="main", help="Target branch (default: main)")
+    p_recon.set_defaults(func=cmd_reconcile)
+
+    # mnemon advisor <project_id>
+    p_adv = subparsers.add_parser("advisor", help="Slow query circuit breaker and index recommendations")
+    p_adv.add_argument("project_id", help="Database project / tenant identifier")
+    p_adv.set_defaults(func=cmd_advisor)
+
+    # mnemon import <project_id> {start,status,cutover}
+    p_imp = subparsers.add_parser("import", help="Zero-downtime database importer from Neon/Supabase")
+    p_imp_sub = p_imp.add_subparsers(dest="action", required=True)
+    p_imp_start = p_imp_sub.add_parser("start", help="Start continuous live replication from external database")
+    p_imp_start.add_argument("project_id", help="Target project identifier")
+    p_imp_start.add_argument("--source", required=True, help="External PostgreSQL connection URI (postgres://...)")
+    p_imp_stat = p_imp_sub.add_parser("status", help="Inspect import progress and replication lag")
+    p_imp_stat.add_argument("project_id", help="Target project identifier")
+    p_imp_cut = p_imp_sub.add_parser("cutover", help="Issue 1-click zero-downtime cutover signal")
+    p_imp_cut.add_argument("project_id", help="Target project identifier")
+    p_imp.set_defaults(func=cmd_import)
+
+    # mnemon quantize <project_id> {set,stats}
+    p_quant = subparsers.add_parser("quantize", help="pgvector + HNSW-PQ vector quantization and disk-spill indexing")
+    p_quant_sub = p_quant.add_subparsers(dest="action", required=True)
+    p_quant_set = p_quant_sub.add_parser("set", help="Configure vector quantization on a table column")
+    p_quant_set.add_argument("project_id", help="Target project identifier")
+    p_quant_set.add_argument("--table", default="documents", help="Table name (default: documents)")
+    p_quant_set.add_argument("--column", default="embedding", help="Vector column (default: embedding)")
+    p_quant_set.add_argument("--dimensions", type=int, default=1536, help="Vector dimensions (default: 1536)")
+    p_quant_set.add_argument("--type", choices=["PQ", "SQ8"], default="PQ", help="Quantization type (default: PQ)")
+    p_quant_set.add_argument("--disk-spill", action="store_true", default=True, help="Enable disk-backed memory spill")
+    p_quant_stats = p_quant_sub.add_parser("stats", help="Inspect active vector compression and memory metrics")
+    p_quant_stats.add_argument("project_id", help="Target project identifier")
+    p_quant.set_defaults(func=cmd_quantize)
+
+    args = parser.parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

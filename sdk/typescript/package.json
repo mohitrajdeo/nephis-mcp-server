@@ -1,0 +1,42 @@
+{
+  "name": "nephis",
+  "version": "1.0.1",
+  "description": "Official TypeScript & Node.js SDK for NEPHIS: High-Performance Isolated Compute Substrate, Sub-6ms Sandboxes, and Zero-Copy Database Branching for AI Coding Agents",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "type": "module",
+  "homepage": "https://nephis.theeducode.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mohitrajdeo/nephis-mcp-server.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "prepack": "npm run build",
+    "test": "npm run build && npx tsx --test tests/client.test.ts"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "keywords": [
+    "nephis",
+    "microvm",
+    "sandbox",
+    "ai-agents",
+    "code-interpreter",
+    "judge0-alternative",
+    "e2b-alternative",
+    "database-branching",
+    "typescript"
+  ],
+  "author": "Mohit Raj Deo <mohit@mohitrajdeo.in>",
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "typescript": "^5.7.3"
+  }
+}

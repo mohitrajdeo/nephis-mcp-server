@@ -1,0 +1,15 @@
+/target
+__pycache__/
+*.py[cod]
+*$py.class
+dist/
+build/
+*.egg-info/
+node_modules/
+*.log
+*.dll
+*.so
+*.dylib
+*.exe
+
+

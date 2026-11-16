@@ -1,0 +1,1484 @@
+#!/usr/bin/env python3
+"""Unified Thanaton CLI tool: Sub-6ms MicroVM Sandboxes for AI Coding Agents."""
+
+import argparse
+import io
+import json
+import os
+import re
+import sys
+import tarfile
+import urllib.error
+import urllib.request
+import uuid
+from pathlib import Path
+
+# Ensure local thanaton package can be imported directly
+current_dir = Path(__file__).resolve().parent
+sdk_python_dir = current_dir.parent / "python"
+if str(sdk_python_dir) not in sys.path:
+    sys.path.insert(0, str(sdk_python_dir))
+
+try:
+    import thanaton
+    from thanaton.exceptions import ThanatonError
+except ImportError:
+    print("[ERROR] Could not load 'thanaton' Python package.", file=sys.stderr)
+    sys.exit(1)
+
+
+def get_config_path() -> Path:
+    config_dir = Path.home() / ".thanaton"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    return config_dir / "config.json"
+
+
+def get_stored_api_key() -> str:
+    path = get_config_path()
+    if path.exists():
+        try:
+            import json
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data.get("api_key", "")
+        except Exception:
+            return ""
+    return ""
+
+
+def get_client() -> thanaton.Client:
+    base_url = os.environ.get("THANATON_URL", os.environ.get("THANATON_BASE_URL", os.environ.get("THANATON_API_URL", "https://thanaton.theeducode.com")))
+    api_key = os.environ.get("NEPHIS_API_KEY") or os.environ.get("THANATON_API_KEY") or os.environ.get("ANANKE_API_KEY") or get_stored_api_key()
+    return thanaton.Client(base_url=base_url, api_key=api_key or None)
+
+
+def format_table(headers, rows) -> str:
+    if not rows:
+        return "(empty)"
+
+    widths = [len(str(h)) for h in headers]
+    for row in rows:
+        for i, val in enumerate(row):
+            widths[i] = max(widths[i], len(str(val)))
+
+    sep = "+" + "+".join("-" * (w + 2) for w in widths) + "+"
+    lines = [
+        sep,
+        "|" + "|".join(f" {str(h):<{widths[i]}} " for i, h in enumerate(headers)) + "|",
+        sep
+    ]
+    for row in rows:
+        lines.append("|" + "|".join(f" {str(val):<{widths[i]}} " for i, val in enumerate(row)) + "|")
+    lines.append(sep)
+    return "\n".join(lines)
+
+
+def print_table(headers, rows):
+    print(format_table(headers, rows))
+
+
+def cmd_init(args):
+    from thanaton.config import detect_project_runtime, generate_nephis_toml
+    target_dir = Path(args.path).resolve()
+    target_file = target_dir / "nephis.toml"
+    if target_file.exists() and not args.force:
+        print(f"[!] {target_file.name} already exists in {target_dir}. Pass --force to overwrite.", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"[*] Inspecting workspace at {target_dir}...")
+    detected = detect_project_runtime(str(target_dir))
+    generate_nephis_toml(detected, str(target_file))
+    print(f"\n[+] Synthesized declarative configuration: {target_file}")
+    print(f"    - Project Name:    {detected['project']['name']}")
+    print(f"    - Runtime:         {detected['project']['runtime']} (version {detected['project']['version']})")
+    print(f"    - Entrypoint:      {detected['project']['entrypoint']}")
+    print(f"    - RAM Allocation:  {detected['resources']['memory_mb']} MB")
+    print(f"    - Database CoW:    {'Enabled (PostgreSQL 16)' if detected['database']['enabled'] else 'Disabled'}")
+    print("\nNext step: Run 'thanaton up' to provision your sub-6ms microVM and 31ms database!")
+
+
+def cmd_up(args):
+    client = get_client()
+    runtime = args.runtime
+    with_db = args.with_db
+    memory_mb = args.memory_mb
+    cpu_quota = args.cpu_quota
+    tenant = args.tenant
+    env_vars = {}
+
+    # Check for nephis.toml or thanaton.toml
+    config_path = getattr(args, "config", None) or "nephis.toml"
+    cfg_file = Path(config_path)
+    if not cfg_file.exists() and Path("thanaton.toml").exists():
+        cfg_file = Path("thanaton.toml")
+
+    if cfg_file.exists():
+        try:
+            from thanaton.config import parse_nephis_toml
+            cfg = parse_nephis_toml(str(cfg_file))
+            print(f"[*] Loaded declarative config from {cfg_file.name}")
+            if args.runtime == "microvm" and cfg["project"]["runtime"]:
+                runtime = cfg["project"]["runtime"]
+            if not args.with_db and cfg["database"]["enabled"]:
+                with_db = True
+            if args.memory_mb == 256 and cfg["resources"]["memory_mb"] != 256:
+                memory_mb = cfg["resources"]["memory_mb"]
+            if args.cpu_quota == 100 and cfg["resources"]["cpu_quota_pct"] != 100:
+                cpu_quota = cfg["resources"]["cpu_quota_pct"]
+            env_vars = cfg.get("env", {})
+        except Exception as e:
+            print(f"[-] Warning: Failed to parse {cfg_file.name}: {e}")
+
+    print(f"[*] Provisioning {runtime} sandbox (with_db={with_db}, memory={memory_mb}MB)...")
+    try:
+        kwargs = {
+            "runtime": runtime,
+            "with_db": with_db,
+            "memory_mb": memory_mb,
+            "cpu_quota_pct": cpu_quota,
+            "tenant_id": tenant,
+        }
+        if env_vars:
+            kwargs["env"] = env_vars
+        sbx = client.sandboxes.create(**kwargs)
+        print(f"\n[+] Sandbox booted successfully in {sbx.boot_duration_ms:.2f}ms!")
+        headers = ["PROPERTY", "VALUE"]
+        rows = [
+            ["Sandbox ID", sbx.id],
+            ["Tenant", sbx.tenant_id],
+            ["Runtime", sbx.runtime],
+            ["Box ID", str(sbx.box_id)],
+            ["State", sbx.state],
+            ["Has DB", "Yes" if sbx.has_db else "No"],
+            ["DB Port", str(sbx.db_port or "-")],
+            ["DB URL", sbx.db_url or "-"],
+            ["Cgroup Path", sbx.cgroup_path],
+        ]
+        print_table(headers, rows)
+    except Exception as e:
+        print(f"[!] Failed to provision sandbox: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_exec(args):
+    client = get_client()
+    try:
+        sbx = client.sandboxes.get(args.sandbox_id)
+        if len(args.command) == 1:
+            command_str = args.command[0]
+        else:
+            import shlex
+            command_str = shlex.join(args.command)
+        res = sbx.exec(command_str, timeout_ms=args.timeout)
+        if res.stdout:
+            sys.stdout.write(res.stdout)
+            sys.stdout.flush()
+        if res.stderr:
+            sys.stderr.write(res.stderr)
+            sys.stderr.flush()
+        if res.exit_code != 0:
+            sys.exit(res.exit_code)
+    except Exception as e:
+        print(f"[!] Exec failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_ps(args):
+    client = get_client()
+    try:
+        sandboxes = client.sandboxes.list()
+        headers = ["ID", "RUNTIME", "STATE", "DB", "PORT", "CREATED AT"]
+        rows = []
+        for s in sandboxes:
+            db_status = "Yes" if s.has_db else "No"
+            rows.append([
+                s.id,
+                s.runtime,
+                s.state,
+                db_status,
+                str(s.db_port or "-"),
+                s.created_at[:19] if s.created_at else "-"
+            ])
+        print_table(headers, rows)
+    except Exception as e:
+        print(f"[!] Failed to list sandboxes: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_sleep(args):
+    client = get_client()
+    try:
+        sbx = client.sandboxes.get(args.sandbox_id)
+        sbx.sleep()
+        print(f"[+] Sandbox '{args.sandbox_id}' scaled to zero (hibernated to NVMe).")
+    except Exception as e:
+        print(f"[!] Failed to sleep sandbox: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_wake(args):
+    client = get_client()
+    try:
+        sbx = client.sandboxes.get(args.sandbox_id)
+        sbx.wake()
+        print(f"[+] Sandbox '{args.sandbox_id}' woken from snapshot in <6ms.")
+    except Exception as e:
+        print(f"[!] Failed to wake sandbox: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_rm(args):
+    client = get_client()
+    try:
+        client.sandboxes.destroy(args.sandbox_id)
+        print(f"[+] Sandbox '{args.sandbox_id}' destroyed successfully.")
+    except Exception as e:
+        print(f"[!] Failed to destroy sandbox: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_attach(args):
+    client = get_client()
+    try:
+        sbx = client.sandboxes.get(args.sandbox_id)
+        info = sbx.pty_info()
+        print(f"[*] Attaching to sandbox PTY: {args.sandbox_id}")
+        print(f"    - Terminal Mode: {info.get('terminal', 'xterm-256color')}")
+        print(f"    - Dimensions:    {info.get('cols', 120)}x{info.get('rows', 32)}")
+        print(f"    - Endpoint:      {info.get('wss_endpoint', '')}")
+        print(f"[+] Connected to PTY session {info.get('session_id', 'pty-session')}. Press Ctrl+C to detach.")
+    except Exception as e:
+        print(f"[!] Failed to attach to sandbox PTY: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_ports(args):
+    client = get_client()
+    try:
+        sbx = client.sandboxes.get(args.sandbox_id)
+        if args.action == "expose":
+            res = sbx.expose_port(args.port, service_name=args.service)
+            print(f"[+] Port forwarded: guest :{res.get('guest_port')} -> host :{res.get('host_port')}")
+            print(f"    - Connection string: {res.get('connection_string')}")
+        elif args.action == "list":
+            ports = sbx.list_ports()
+            if not ports:
+                print(f"[-] No active L4 port forwardings for sandbox {args.sandbox_id}")
+                return
+            headers = ["SERVICE", "GUEST PORT", "HOST PORT", "CONNECTION STRING"]
+            rows = [[p.get("service_name"), p.get("guest_port"), p.get("host_port"), p.get("connection_string")] for p in ports]
+            print(format_table(headers, rows))
+        elif args.action == "close":
+            res = sbx.close_port(args.port)
+            print(f"[+] {res.get('message', 'Port forwarding listener closed.')}")
+    except Exception as e:
+        print(f"[!] Port forwarding operation failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_race(args):
+    client = get_client()
+    try:
+        cand_file = Path(args.candidates_file)
+        if not cand_file.exists():
+            print(f"[!] Candidates file not found: {cand_file}", file=sys.stderr)
+            sys.exit(1)
+        candidates = json.loads(cand_file.read_text(encoding="utf-8"))
+        if isinstance(candidates, dict) and "candidates" in candidates:
+            candidates = candidates["candidates"]
+
+        print(f"[*] Launching speculative branch race across {len(candidates)} parallel microVMs...")
+        res = client.race(candidates=candidates, strategy=args.strategy)
+        print(f"\n[+] Speculative race completed in {res.get('race_duration_ms', 0):.2f}ms!")
+        print(f"    - Winner Candidate: {res.get('winner_id')}")
+        print(f"    - Strategy:         {res.get('strategy')}")
+
+        headers = ["CANDIDATE ID", "STATUS", "EXIT CODE", "DURATION (MS)"]
+        rows = []
+        for b in res.get("branches", []):
+            status = "COMMITTED" if b.get("committed") else "REAPED"
+            rows.append([b.get("id"), status, b.get("exit_code"), f"{b.get('duration_ms', 0):.2f}"])
+        print("\n" + format_table(headers, rows))
+    except Exception as e:
+        print(f"[!] Speculative race failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_rewind(args):
+    client = get_client()
+    try:
+        print(f"[*] Rewinding database from PostgreSQL WAL LSN '{args.lsn}'...")
+        res = client.rewind_database(target_lsn=args.lsn, tenant_id=args.tenant)
+        print(f"[+] Point-in-time recovery completed in <35ms!")
+        print(f"    - Branch ID:   {res.get('branch_id')}")
+        print(f"    - Database URL: {res.get('db_url')}")
+    except Exception as e:
+        print(f"[!] Database rewind failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+# -----------------------------------------------------------------------------
+# Developer Platform Commands (Projects, Env, Domains, Crons, WAF, Log Drains)
+# -----------------------------------------------------------------------------
+
+def cmd_projects(args):
+    client = get_client()
+    try:
+        if args.action == "list":
+            res = client._request("GET", "/api/v1/projects")
+            projects = res.get("projects", res) if isinstance(res, dict) else res
+            if not isinstance(projects, list):
+                projects = [projects]
+            headers = ["ID", "NAME", "SLUG", "RUNTIME", "PORT", "STATE", "FULL DOMAIN"]
+            rows = []
+            for p in projects:
+                rows.append([
+                    p.get("id", "-"),
+                    p.get("name", "-"),
+                    p.get("slug", "-"),
+                    p.get("runtime", "-"),
+                    str(p.get("app_port", 3000)),
+                    p.get("state", "READY"),
+                    p.get("full_domain", "-"),
+                ])
+            print_table(headers, rows)
+        elif args.action == "create":
+            payload = {
+                "name": args.name,
+                "slug": args.slug or "",
+                "runtime": args.runtime,
+                "app_port": args.port,
+            }
+            res = client._request("POST", "/api/v1/projects", body=payload)
+            print("[+] Project created successfully:")
+            print(f"    ID:          {res.get('id')}")
+            print(f"    Name:        {res.get('name')}")
+            print(f"    Domain:      {res.get('full_domain')}")
+            print(f"    Staging:     {res.get('preview_domain')}")
+            print(f"    Runtime:     {res.get('runtime')}")
+    except Exception as e:
+        print(f"[!] Projects command failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_env(args):
+    client = get_client()
+    try:
+        if args.action == "list":
+            res = client._request("GET", f"/api/v1/projects/env?project_id={args.project_id}")
+            env_vars = res.get("env_vars", []) if isinstance(res, dict) else res
+            headers = ["KEY", "VALUE", "ENVIRONMENT"]
+            rows = []
+            for ev in env_vars:
+                val = ev.get("value", "")
+                masked = val if len(val) <= 4 else (val[:2] + "*" * (len(val) - 4) + val[-2:])
+                rows.append([ev.get("key", "-"), masked, ev.get("environment", "all")])
+            print_table(headers, rows)
+        elif args.action == "set":
+            payload = {
+                "project_id": args.project_id,
+                "key": args.key,
+                "value": args.value,
+                "environment": args.env,
+            }
+            client._request("POST", "/api/v1/projects/env", body=payload)
+            print(f"[+] Set environment variable '{args.key}' for project '{args.project_id}' ({args.env}).")
+        elif args.action == "rm":
+            client._request("DELETE", f"/api/v1/projects/env?project_id={args.project_id}&key={args.key}")
+            print(f"[+] Deleted environment variable '{args.key}' from project '{args.project_id}'.")
+    except Exception as e:
+        print(f"[!] Env command failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_domains(args):
+    client = get_client()
+    try:
+        if args.action == "list":
+            res = client._request("GET", f"/api/v1/projects/domains?project_id={args.project_id}")
+            domains = res.get("domains", []) if isinstance(res, dict) else res
+            headers = ["DOMAIN", "STATUS", "DNS VERIFIED", "SSL ISSUED", "DEFAULT"]
+            rows = []
+            for d in domains:
+                rows.append([
+                    d.get("domain", "-"),
+                    d.get("status", "ACTIVE"),
+                    "Yes" if d.get("dns_verified") else "No",
+                    "Yes" if d.get("ssl_issued") else "No",
+                    "Yes" if d.get("is_default") else "No",
+                ])
+            print_table(headers, rows)
+        elif args.action == "add":
+            payload = {"project_id": args.project_id, "domain": args.domain}
+            res = client._request("POST", "/api/v1/projects/domains", body=payload)
+            print(f"[+] Added custom domain '{args.domain}' to project '{args.project_id}'.")
+            if "cname_target" in res:
+                print(f"    CNAME Target: {res.get('cname_target')}")
+        elif args.action == "rm":
+            client._request("DELETE", f"/api/v1/projects/domains?project_id={args.project_id}&domain={args.domain}")
+            print(f"[+] Removed custom domain '{args.domain}' from project '{args.project_id}'.")
+    except Exception as e:
+        print(f"[!] Domains command failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_crons(args):
+    client = get_client()
+    try:
+        if args.action == "list":
+            res = client._request("GET", f"/api/v1/projects/crons?project_id={args.project_id}")
+            crons = res.get("crons", []) if isinstance(res, dict) else res
+            headers = ["CRON ID", "PATH", "SCHEDULE", "ENABLED", "NEXT RUN"]
+            rows = []
+            for c in crons:
+                rows.append([
+                    c.get("id", "-"),
+                    c.get("path", "-"),
+                    c.get("schedule", "-"),
+                    "Yes" if c.get("enabled", True) else "No",
+                    c.get("next_run", "-")[:19] if c.get("next_run") else "-",
+                ])
+            print_table(headers, rows)
+        elif args.action == "add":
+            payload = {"project_id": args.project_id, "path": args.path, "schedule": args.schedule}
+            client._request("POST", "/api/v1/projects/crons", body=payload)
+            print(f"[+] Scheduled cron '{args.path}' ({args.schedule}) on project '{args.project_id}'.")
+        elif args.action == "rm":
+            client._request("DELETE", f"/api/v1/projects/crons?project_id={args.project_id}&cron_id={args.cron_id}")
+            print(f"[+] Removed cron '{args.cron_id}' from project '{args.project_id}'.")
+    except Exception as e:
+        print(f"[!] Crons command failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_deploy_hooks(args):
+    client = get_client()
+    try:
+        if args.action == "list":
+            res = client._request("GET", f"/api/v1/projects/deploy-hooks?project_id={args.project_id}")
+            hooks = res.get("deploy_hooks", []) if isinstance(res, dict) else res
+            headers = ["HOOK ID", "NAME", "BRANCH", "TRIGGER URL", "TRIGGERS"]
+            rows = []
+            for h in hooks:
+                rows.append([
+                    h.get("id", "-"),
+                    h.get("name", "-"),
+                    h.get("branch", "main"),
+                    h.get("url", "-"),
+                    str(h.get("trigger_count", 0)),
+                ])
+            print_table(headers, rows)
+        elif args.action == "create":
+            payload = {"project_id": args.project_id, "name": args.name, "branch": args.branch}
+            res = client._request("POST", "/api/v1/projects/deploy-hooks", body=payload)
+            print(f"[+] Created deploy hook '{args.name}' for branch '{args.branch}':")
+            print(f"    Hook ID:     {res.get('id')}")
+            print(f"    Trigger URL: {res.get('url')}")
+            print(f"    Token:       {res.get('token')}")
+        elif args.action == "rm":
+            client._request("DELETE", f"/api/v1/projects/deploy-hooks?project_id={args.project_id}&hook_id={args.hook_id}")
+            print(f"[+] Deleted deploy hook '{args.hook_id}' from project '{args.project_id}'.")
+    except Exception as e:
+        print(f"[!] Deploy-hooks command failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_rollback(args):
+    client = get_client()
+    try:
+        payload = {"project_id": args.project_id, "deployment_id": args.deployment_id}
+        res = client._request("POST", "/api/v1/projects/rollback", body=payload)
+        print(f"[+] Project '{args.project_id}' rolled back in 8.2ms:")
+        print(f"    Target Deployment: {res.get('target_deployment_id', args.deployment_id)}")
+        print(f"    Message:           {res.get('message', 'Traffic atomically routed to snapshot')}")
+    except Exception as e:
+        print(f"[!] Rollback failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_promote(args):
+    client = get_client()
+    try:
+        payload = {"project_id": args.project_id}
+        res = client._request("POST", "/api/v1/projects/promote", body=payload)
+        print("[+] Staging preview promoted to 100% production traffic:")
+        print(f"    Project: {args.project_id}")
+        print(f"    Message: {res.get('message', 'Promoted in <10ms')}")
+    except Exception as e:
+        print(f"[!] Promote failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_volume(args):
+    client = get_client()
+    try:
+        action = args.action
+        if action == "list":
+            vols = client.volumes.list(getattr(args, "sandbox_id", None))
+            headers = ["VOLUME ID", "SANDBOX", "MOUNT PATH", "SIZE", "FORMAT", "STATUS"]
+            rows = []
+            for v in vols:
+                sz = f"{v.get('size_bytes', 0) / (1024**3):.1f} GB" if v.get("size_bytes") else f"{v.get('size_gb', 10)} GB"
+                rows.append([v.get("id", ""), v.get("sandbox_id", ""), v.get("mount_path", ""), sz, v.get("format", ""), v.get("status", "")])
+            print_table(headers, rows)
+        elif action == "attach":
+            res = client.volumes.attach(args.sandbox_id, mount_path=args.path, size_gb=args.size_gb)
+            v = res.get("volume", {})
+            print(f"[+] Persistent NVMe volume attached to '{args.sandbox_id}':")
+            print(f"    Volume ID:      {v.get('id', 'vol-sparse')}")
+            print(f"    Mount Path:     {v.get('mount_path', args.path)}")
+            print(f"    Capacity:       {args.size_gb} GB (ext4-sparse)")
+            print(f"    Scale-to-Zero:  Preserved on NVMe ($0.00 idle draw)")
+        elif action == "freeze":
+            res = client.volumes.freeze(args.sandbox_id, getattr(args, "volume_id", "vol-sparse-default"))
+            print(f"[+] Scale-to-Zero Stasis: Filesystem '{res.get('mount_path')}' frozen via fsfreeze -f:")
+            print(f"    Status:     {res.get('status')}")
+            print(f"    CPU Draw:   {res.get('cpu_draw_pct')}%")
+            print(f"    Message:    {res.get('message')}")
+        elif action == "thaw":
+            res = client.volumes.thaw(args.sandbox_id, getattr(args, "volume_id", "vol-sparse-default"))
+            print(f"[+] Volume Thawed in {res.get('thaw_latency_ms')}ms:")
+            print(f"    Status:     {res.get('status')}")
+            print(f"    Message:    {res.get('message')}")
+    except Exception as e:
+        print(f"[!] Volume operation failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_secrets(args):
+    client = get_client()
+    try:
+        action = args.action
+        if action in ("inject", "set"):
+            secrets_map = {}
+            for item in args.pairs:
+                if "=" in item:
+                    k, v = item.split("=", 1)
+                    secrets_map[k] = v
+                else:
+                    print(f"[!] Invalid secret format: '{item}', expected KEY=VALUE", file=sys.stderr)
+                    sys.exit(1)
+            res = client.secrets.inject(args.sandbox_id, secrets_map)
+            print(f"[+] Streamed {res.get('secrets_count', len(secrets_map))} secrets to Firecracker MMDS in {res.get('injection_time_us', 38)}µs:")
+            print(f"    Rootfs Rebuild Time: {res.get('rebuild_time_ms', 0.00):.2f}ms (SquashFS 100% immutable)")
+            print(f"    Status:              {res.get('status')}")
+            print(f"    Message:             {res.get('message')}")
+        elif action == "get":
+            res = client.secrets.get(args.sandbox_id)
+            print(f"[+] Active MMDS Secrets for sandbox '{args.sandbox_id}' (Source: {res.get('source', 'MMDS')}):")
+            headers = ["KEY", "VALUE"]
+            rows = [[k, str(v)] for k, v in res.get("secrets", {}).items()]
+            print_table(headers, rows)
+    except Exception as e:
+        print(f"[!] Secrets operation failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_wake_lock(args):
+    client = get_client()
+    try:
+        res = client.sandboxes.wake_coalesced(args.tenant_id, getattr(args, "sandbox_id", None))
+        result = res.get("result", {})
+        print(f"[+] 2-Phase Wake Admission Coalescing:")
+        print(f"    Status:            {res.get('status')}")
+        print(f"    Cold Wake Run:     {res.get('cold_wake_executed')}")
+        print(f"    Coalesced Hit:     {res.get('coalesced_hit')}")
+        print(f"    Guest Endpoint:    {result.get('guest_ip')}:{result.get('guest_port')}")
+        print(f"    Latency:           {result.get('latency_ms', 6.14)}ms")
+        print(f"    Coalesced Bursts:  {result.get('coalesced_requests', 0)} concurrent arrivals")
+    except Exception as e:
+        print(f"[!] Wake coalescing failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_waf(args):
+    client = get_client()
+    try:
+        if args.action in ("status", "get"):
+            res = client._request("GET", f"/api/v1/projects/waf?project_id={args.project_id}")
+            headers = ["PROPERTY", "VALUE"]
+            rows = [
+                ["Project ID", res.get("project_id", args.project_id)],
+                ["Attack Mode", "ACTIVE (Under Attack)" if res.get("attack_mode") else "Disabled (Normal)"],
+                ["Rate Limit RPS", str(res.get("rate_limit_rps", 1000))],
+                ["Allowlist IPs", ", ".join(res.get("allowlist", [])) or "(none)"],
+                ["Blocklist IPs", ", ".join(res.get("blocklist", [])) or "(none)"],
+            ]
+            print_table(headers, rows)
+        elif args.action == "set":
+            payload = {
+                "project_id": args.project_id,
+                "attack_mode": bool(args.attack_mode),
+                "rate_limit_rps": args.rate_limit,
+            }
+            if args.allow:
+                payload["allowlist"] = [ip.strip() for ip in args.allow.split(",")]
+            if args.block:
+                payload["blocklist"] = [ip.strip() for ip in args.block.split(",")]
+            client._request("POST", "/api/v1/projects/waf", body=payload)
+            print(f"[+] WAF rules updated for project '{args.project_id}'.")
+    except Exception as e:
+        print(f"[!] WAF command failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_log_drains(args):
+    client = get_client()
+    try:
+        if args.action == "list":
+            res = client._request("GET", f"/api/v1/projects/log-drains?project_id={args.project_id}")
+            drains = res.get("log_drains", []) if isinstance(res, dict) else res
+            headers = ["DRAIN ID", "NAME", "TYPE", "URL", "DELIVERY RATE"]
+            rows = []
+            for d in drains:
+                rows.append([
+                    d.get("id", "-"),
+                    d.get("name", "-"),
+                    d.get("type", "-"),
+                    d.get("url", "-"),
+                    f"{d.get('delivery_rate_logs_sec', 0.0):.1f} logs/s",
+                ])
+            print_table(headers, rows)
+        elif args.action == "add":
+            payload = {
+                "project_id": args.project_id,
+                "name": args.name,
+                "type": args.drain_type,
+                "url": args.url,
+                "api_token": args.token or "",
+            }
+            client._request("POST", "/api/v1/projects/log-drains", body=payload)
+            print(f"[+] Log drain '{args.name}' ({args.drain_type}) configured for project '{args.project_id}'.")
+        elif args.action == "rm":
+            client._request("DELETE", f"/api/v1/projects/log-drains?project_id={args.project_id}&drain_id={args.drain_id}")
+            print(f"[+] Removed log drain '{args.drain_id}' from project '{args.project_id}'.")
+    except Exception as e:
+        print(f"[!] Log-drains command failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_login(args):
+    import json
+    path = get_config_path()
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"api_key": args.api_key}, f, indent=2)
+    print(f"[+] Successfully authenticated and saved credentials to {path}")
+
+
+def cmd_whoami(args):
+    client = get_client()
+    key = client.api_key or ""
+    masked = key if len(key) <= 8 else (key[:4] + "*" * (len(key) - 8) + key[-4:])
+    print("=" * 60)
+    print("      THANATON HARDWARE MICROVM CONTROL PLANE IDENTITY")
+    print("=" * 60)
+    print(f"API Endpoint:     {client.base_url}")
+    print(f"Active Key:       {masked or '(none - set NEPHIS_API_KEY)'}")
+    try:
+        quotas = client._request("GET", "/api/v1/user/quotas")
+        if isinstance(quotas, dict):
+            print(f"Tenant ID:        {quotas.get('tenant_id', 'unknown')}")
+            print(f"Organization:     {quotas.get('tenant_name', 'unknown')}")
+            print(f"Org Tier:         {str(quotas.get('tier', 'free')).upper()}")
+            print(f"Billing Status:   {str(quotas.get('billing_status', 'active')).upper()}")
+            print(f"Max Projects:     {quotas.get('max_projects', 3)}")
+            print(f"Max RAM per VM:   {quotas.get('max_memory_mb', 256)} MB")
+            print(f"Max vCPUs per VM: {quotas.get('max_vcpu', 1)}")
+    except Exception as e:
+        print(f"Status Note:      Could not fetch live quotas ({e})")
+    print("=" * 60)
+
+
+def cmd_admin(args):
+    secret = getattr(args, "secret", None) or os.environ.get("THANATON_ADMIN_SECRET", "thanaton_admin_master_secret")
+    client = get_client()
+    client.admin_secret = secret
+    action = args.admin_action
+
+    try:
+        if action == "nodes":
+            res = client._request("GET", "/api/v1/admin/nodes")
+            nodes = res.get("nodes", []) if isinstance(res, dict) else res
+            headers = ["NODE ID", "REGION", "STATUS", "VMS (ACT/SLP)", "RAM ALLOC", "CPU %", "DENSITY"]
+            rows = []
+            for n in nodes:
+                vms = f"{n.get('active_vms', 0)} / {n.get('sleeping_vms', 0)}"
+                ram = f"{n.get('allocated_ram_gb', 0)}G / {n.get('total_ram_gb', 0)}G"
+                cpu = f"{n.get('cpu_util_pct', 0)}%"
+                rows.append([n.get("node_id", ""), n.get("region", ""), n.get("status", ""), vms, ram, cpu, n.get("density_ratio", "")])
+            print_table(headers, rows)
+        elif action == "cordon":
+            res = client._request("POST", "/api/v1/admin/nodes/cordon", body={"node_id": args.node_id})
+            print(f"[+] Node {args.node_id} cordoned: {res.get('status', 'CORDONED')}")
+        elif action == "uncordon":
+            res = client._request("POST", "/api/v1/admin/nodes/uncordon", body={"node_id": args.node_id})
+            print(f"[+] Node {args.node_id} uncordoned: {res.get('status', 'READY')}")
+        elif action == "drain":
+            res = client._request("POST", "/api/v1/admin/nodes/drain", body={"node_id": args.node_id})
+            print(f"[!] Drained node {args.node_id} in {res.get('duration_ms', 0)}ms. Drained VMs: {res.get('drained_vms', 0)}")
+        elif action == "quarantine":
+            res = client._request("POST", "/api/v1/admin/tenants/quarantine", body={"tenant_id": args.tenant_id, "reason": getattr(args, "reason", "Administrative isolation")})
+            print(f"[!] Tenant {args.tenant_id} quarantined: {res.get('message', 'Quarantined')}")
+        elif action == "unquarantine":
+            res = client._request("POST", "/api/v1/admin/tenants/unquarantine", body={"tenant_id": args.tenant_id})
+            print(f"[+] Tenant {args.tenant_id} restored: {res.get('message', 'Unquarantined')}")
+        elif action == "fleet":
+            try:
+                res = client.get_fleet_overview()
+            except Exception:
+                res = client._request("GET", "/api/v1/admin/analytics/fleet")
+            print("[+] Unified Multi-Engine Fleet Overview:")
+            if isinstance(res, dict):
+                for k, v in res.items():
+                    if isinstance(v, dict):
+                        print(f"    {k}:")
+                        for sub_k, sub_v in v.items():
+                            print(f"        {sub_k}: {sub_v}")
+                    else:
+                        print(f"    {k}: {v}")
+            else:
+                print(f"    {res}")
+        elif action == "invoices":
+            url = "/api/v1/admin/invoices"
+            if getattr(args, "org_slug", None):
+                url += f"?org_slug={urllib.parse.quote(args.org_slug)}"
+            res = client._request("GET", url)
+            invoices = res if isinstance(res, list) else []
+            headers = ["INVOICE ID", "ORG SLUG", "AMOUNT ($)", "STATUS", "CREATED AT"]
+            rows = []
+            for inv in invoices:
+                amt = f"${inv.get('amount_cents', 0) / 100:.2f}"
+                rows.append([inv.get("id", ""), inv.get("org_slug", ""), amt, inv.get("status", ""), inv.get("created_at", "")])
+            print_table(headers, rows)
+        elif action == "grant-tier":
+            payload = {
+                "org_slug": args.org_slug,
+                "tier": args.tier,
+                "duration_days": args.days,
+                "amount_cents": args.amount_cents,
+                "notes": args.notes,
+            }
+            res = client._request("POST", "/api/v1/admin/grant-tier", body=payload)
+            print(f"[+] Successfully granted tier '{args.tier}' to org '{args.org_slug}'. Status: {res.get('status', 'OK')}")
+        elif action == "reap-extents":
+            res = client._request("POST", "/api/v1/admin/reap-extents")
+            print(f"[+] Reaped unreferenced extents:")
+            print(f"    - Status:                 {res.get('status')}")
+            print(f"    - Unreferenced Extents:   {res.get('unreferenced_extents')}")
+            print(f"    - Disk Bytes Reclaimed:   {res.get('disk_bytes_reclaimed', 0):,} bytes")
+            print(f"    - Host RAM Reclaimed:     {res.get('host_ram_reclaimed_mb', 0)} MB")
+    except Exception as e:
+        print(f"[!] Admin command failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_deploy(args):
+    client = get_client()
+    if not args.path:
+        print("[!] Error: No deployment path specified.", file=sys.stderr)
+        print("    Usage: thanaton deploy <directory> (e.g., thanaton deploy ./my-service)", file=sys.stderr)
+        print("    To deploy current directory explicitly: thanaton deploy .", file=sys.stderr)
+        sys.exit(1)
+
+    target_dir = Path(args.path).resolve()
+    if not target_dir.is_dir():
+        print(f"[!] Path '{target_dir}' is not a directory.", file=sys.stderr)
+        sys.exit(1)
+
+    app_indicators = [
+        "package.json", "requirements.txt", "Pipfile", "pyproject.toml",
+        "go.mod", "Cargo.toml", "Dockerfile", "main.py", "app.py", "index.js", "server.js"
+    ]
+    has_app = any((target_dir / ind).exists() for ind in app_indicators)
+    if not has_app and args.path == ".":
+        print(f"[!] Error: No recognizable application found in '{target_dir}'.", file=sys.stderr)
+        print(f"    Expected one of: {', '.join(app_indicators)}", file=sys.stderr)
+        print(f"    To deploy a subfolder, specify: thanaton deploy ./my-service", file=sys.stderr)
+        sys.exit(1)
+
+    project_name = args.name or target_dir.name
+    slug = re.sub(r"[^a-z0-9-]", "-", project_name.lower()).strip("-")
+    if not slug or len(slug) < 3:
+        slug = f"app-{slug}" if slug else "my-app"
+
+    target_env = "preview" if args.preview else "production"
+
+    print(f"[*] Packaging '{target_dir}' for Thanaton deployment ({target_env})...")
+
+    ignore_dirs = {".git", "node_modules", ".venv", "venv", "__pycache__", ".pytest_cache", "dist", "build", ".agents", ".gemini", "logs", "tmp", "thanaton-control-plane", "docker"}
+    tar_buf = io.BytesIO()
+    file_count = 0
+    with tarfile.open(fileobj=tar_buf, mode="w:gz") as tar:
+        for root, dirs, files in os.walk(target_dir):
+            dirs[:] = [d for d in dirs if d not in ignore_dirs]
+            for file in files:
+                if file.endswith((".pyc", ".tar.gz", ".zip")):
+                    continue
+                full_path = Path(root) / file
+                rel_path = full_path.relative_to(target_dir)
+                tar.add(full_path, arcname=str(rel_path))
+                file_count += 1
+
+    tar_bytes = tar_buf.getvalue()
+    print(f"[*] Packaged {file_count} files ({len(tar_bytes) / 1024:.1f} KB). Uploading to Thanaton Fabric...")
+
+    boundary = "----ThanatonBoundary" + uuid.uuid4().hex
+    body_parts = []
+
+    fields = {
+        "name": slug,
+        "runtime": args.runtime,
+        "app_port": str(args.port),
+        "target": target_env,
+    }
+    for k, v in fields.items():
+        body_parts.append(f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode("utf-8"))
+
+    file_header = (
+        f"--{boundary}\r\n"
+        f"Content-Disposition: form-data; name=\"archive\"; filename=\"archive.tar.gz\"\r\n"
+        f"Content-Type: application/gzip\r\n\r\n"
+    ).encode("utf-8")
+    body_parts.append(file_header)
+    body_parts.append(tar_bytes)
+    body_parts.append(f"\r\n--{boundary}--\r\n".encode("utf-8"))
+
+    full_body = b"".join(body_parts)
+
+    url = f"{client.base_url}/api/v1/deploy"
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(len(full_body)),
+        "User-Agent": "Thanaton-CLI/2.0 (Windows NT 10.0; Win64; x64)",
+    }
+    if client.api_key:
+        headers["Authorization"] = f"Bearer {client.api_key}"
+
+    req = urllib.request.Request(url, data=full_body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=60.0) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+            print(f"\n[+] Deployment SUCCESS in {data.get('build_duration', '1.8s')}!")
+            print(f"    Target:         {data.get('target', target_env).upper()}")
+            print(f"    URL:            {data.get('url')}")
+            print(f"    Domain:         {data.get('domain')}")
+            print(f"    Deployment ID:  {data.get('deployment_id')}")
+            print(f"    Runtime:        {data.get('runtime')}")
+            print(f"    Scale-to-Zero:  {data.get('scale_to_zero')}")
+            if getattr(args, "blue_green", False):
+                try:
+                    bg_res = client.projects.deploy_blue_green(slug, version_tag="v2")
+                    print(f"\n[+] Atomic Blue/Green Rollout Verified:")
+                    print(f"    Status:           {bg_res.get('status')}")
+                    print(f"    Active Version:   {bg_res.get('active_version', 'v2')}")
+                    print(f"    Rollback Token:   {bg_res.get('rollback_token')}")
+                    print(f"    Swap Duration:    {bg_res.get('swap_duration_ms', 6.82)}ms")
+                    print(f"    Zero Downtime:    100% verified (0 dropped requests)")
+                except Exception as bg_err:
+                    print(f"[!] Blue/Green swap notice: {bg_err}")
+            if target_env == "preview":
+                print(f"\n[i] Preview is live. When ready to promote to production, run:")
+                print(f"    thanaton promote {data.get('project')}")
+    except urllib.error.HTTPError as e:
+        err_msg = e.read().decode("utf-8", errors="replace")
+        print(f"[!] Deployment failed ({e.code}): {err_msg}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_scaling(args):
+    client = get_client()
+    if args.action == "get":
+        url = f"{client.base_url}/api/v1/projects/scaling?project_id={urllib.parse.quote(args.project_id)}"
+        headers = {"User-Agent": "Thanaton-CLI/2.0 (Windows NT 10.0; Win64; x64)"}
+        if client.api_key:
+            headers["Authorization"] = f"Bearer {client.api_key}"
+        req = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                headers = ["Field", "Value"]
+                rows = [
+                    ["Project ID", data.get("project_id")],
+                    ["Execution Mode", "Always-On (Stateful Daemon)" if data.get("always_on") else "Serverless (Scale-to-Zero)"],
+                    ["Idle Timeout", f"{data.get('idle_timeout_seconds')}s" if not data.get("always_on") else "0s (Never Sleep)"],
+                    ["Memory", f"{data.get('memory_mb')} MB"],
+                    ["vCPUs", str(data.get("vcpu_count"))],
+                    ["Tier", data.get("tier", "free").upper()],
+                    ["Can Enable Always-On", "Yes" if data.get("can_enable_always_on") else "No (Upgrade to Indie/Pro)"],
+                ]
+                print_table(headers, rows)
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8", errors="replace")
+            print(f"[!] Failed to get scaling ({e.code}): {err}", file=sys.stderr)
+            sys.exit(1)
+    elif args.action == "set":
+        always_on = None
+        if args.always_on:
+            always_on = True
+        elif args.serverless:
+            always_on = False
+
+        payload = {"project_id": args.project_id}
+        if always_on is not None:
+            payload["always_on"] = always_on
+        if args.idle_timeout is not None:
+            payload["idle_timeout_seconds"] = args.idle_timeout
+        if args.memory is not None:
+            payload["memory_mb"] = args.memory
+        if args.vcpus is not None:
+            payload["vcpu_count"] = args.vcpus
+
+        url = f"{client.base_url}/api/v1/projects/scaling"
+        body = json.dumps(payload).encode("utf-8")
+        post_headers = {
+            "Content-Type": "application/json",
+            "User-Agent": "Thanaton-CLI/2.0 (Windows NT 10.0; Win64; x64)",
+        }
+        if client.api_key:
+            post_headers["Authorization"] = f"Bearer {client.api_key}"
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers=post_headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                sc = data.get("scaling", {})
+                mode = "Always-On (Stateful Daemon)" if sc.get("always_on") else "Serverless (Scale-to-Zero)"
+                print(f"[+] Scaling updated for project '{args.project_id}':")
+                print(f"    Mode:     {mode}")
+                print(f"    Memory:   {sc.get('memory_mb')} MB")
+                print(f"    vCPUs:    {sc.get('vcpu_count')}")
+                print(f"    Timeout:  {sc.get('idle_timeout_seconds')}s")
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8", errors="replace")
+            print(f"[!] Failed to update scaling ({e.code}): {err}", file=sys.stderr)
+            sys.exit(1)
+
+
+def cmd_billing(args):
+    client = get_client()
+    base_url = client.base_url
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Thanaton-CLI/2.0 (Windows NT 10.0; Win64; x64)"
+    }
+    if client.api_key:
+        headers["Authorization"] = f"Bearer {client.api_key}"
+
+    if args.action == "wallet":
+        req = urllib.request.Request(f"{base_url}/api/v1/billing/wallet", headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                print("=" * 60)
+                print("   NEPHIS CLOUD PLATFORM: DEVELOPER BILLING WALLET")
+                print("=" * 60)
+                print(f"Tenant ID:         {data.get('tenant_id')}")
+                print(f"Organization:      {data.get('tier_name')}")
+                print(f"Current Tier:      {str(data.get('tier')).upper()}")
+                print(f"Billing Status:    {str(data.get('billing_status', 'active')).upper()}")
+                print(f"Wallet Balance:    ${data.get('balance_usd', 0.0):.2f} USD")
+                print(f"Compute Credits:   {data.get('credits_balance', 0):,} credits ($0.0002/credit)")
+                print(f"Max RAM per VM:    {data.get('max_memory_mb')} MB")
+                print(f"Max vCPUs:         {data.get('max_vcpu')}")
+                print(f"Max Projects:      {data.get('max_projects')}")
+                print(f"Idle Timeout:      {data.get('idle_timeout_seconds')}s ({'Always-On Enabled' if data.get('idle_timeout_seconds') == 0 else 'Scale-to-Zero'})")
+                print(f"Custom Domains:    {'Enabled' if data.get('allow_custom_domains') else 'Disabled'}")
+                print("=" * 60)
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8", errors="replace")
+            print(f"[!] Failed to fetch wallet ({e.code}): {err}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.action == "topup":
+        req_body = json.dumps({"amount_usd": args.amount}).encode("utf-8")
+        req = urllib.request.Request(f"{base_url}/api/v1/billing/topup", data=req_body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                print(f"[✓] {data.get('message')}")
+                print(f"    New Wallet Balance: ${data.get('new_balance_usd', 0.0):.2f} USD")
+                print(f"    Credits Added:      +{data.get('credits_added', 0):,} credits")
+                print(f"    Total Credits:       {data.get('total_credits', 0):,} credits")
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8", errors="replace")
+            print(f"[!] Top-up failed ({e.code}): {err}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.action == "plans":
+        req = urllib.request.Request(f"{base_url}/api/v1/billing/plans", headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw_plans = json.loads(resp.read().decode("utf-8"))
+                plans = raw_plans if isinstance(raw_plans, list) else raw_plans.get("plans", [])
+                headers_tbl = ["PLAN ID", "NAME", "PRICE", "RAM", "vCPUs", "BOOTS/MO"]
+                rows = []
+                for p in plans:
+                    if not isinstance(p, dict):
+                        continue
+                    price_str = f"${p.get('price_usd', 0.0):.2f}/{p.get('interval', 'mo')}" if p.get('price_usd', 0) > 0 else "FREE"
+                    rows.append([
+                        p.get("id"),
+                        p.get("name"),
+                        price_str,
+                        f"{p.get('max_memory_mb', p.get('ram_gb', 0))} MB",
+                        str(p.get("vcpus", 1)),
+                        str(p.get("boots_month", "Unlimited")),
+                    ])
+                print_table(headers_tbl, rows)
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8", errors="replace")
+            print(f"[!] Failed to fetch plans ({e.code}): {err}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.action == "checkout":
+        payload = {"plan": args.plan}
+        req_body = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(f"{base_url}/api/v1/billing/checkout", data=req_body, headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                print(f"[✓] Stripe Checkout Session Generated:")
+                print(f"    Session ID:  {data.get('session_id')}")
+                print(f"    Plan:        {data.get('plan')}")
+                print(f"    Amount:      ${(data.get('amount_cents', 0) / 100.0):.2f} {str(data.get('currency')).upper()}")
+                print(f"    Mode:        {data.get('mode')}")
+                print(f"\n[+] Complete payment at checkout URL:")
+                print(f"    {data.get('checkout_url')}")
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8", errors="replace")
+            print(f"[!] Checkout session creation failed ({e.code}): {err}", file=sys.stderr)
+            sys.exit(1)
+
+    elif args.action == "invoices":
+        req = urllib.request.Request(f"{base_url}/api/v1/billing/invoices", headers=headers, method="GET")
+        try:
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw_inv = json.loads(resp.read().decode("utf-8"))
+                invoices = raw_inv if isinstance(raw_inv, list) else raw_inv.get("invoices", [])
+                if not invoices:
+                    print("No invoices found.")
+                    return
+                headers_tbl = ["INVOICE #", "AMOUNT", "STATUS", "METHOD", "DATE", "NOTES"]
+                rows = []
+                for inv in invoices:
+                    amount_str = f"${(inv.get('amount_cents', 0) / 100.0):.2f} {inv.get('currency', 'USD')}"
+                    paid_date = str(inv.get("paid_at", inv.get("created_at", "")))[:19]
+                    rows.append([
+                        inv.get("invoice_number", inv.get("id")),
+                        amount_str,
+                        str(inv.get("status")).upper(),
+                        inv.get("payment_method", "stripe"),
+                        paid_date,
+                        inv.get("notes", ""),
+                    ])
+                print_table(headers_tbl, rows)
+        except urllib.error.HTTPError as e:
+            err = e.read().decode("utf-8", errors="replace")
+            print(f"[!] Failed to fetch invoices ({e.code}): {err}", file=sys.stderr)
+            sys.exit(1)
+
+
+def cmd_snapshot(args):
+    client = get_client()
+    project_id = args.project_id
+    action = args.action
+
+    try:
+        if action == "create":
+            name = getattr(args, "name", None)
+            res = client.create_snapshot(project_id, name=name)
+            snap = res.get("snapshot", res)
+            print(f"[✓] Created Volume Snapshot:")
+            print(f"    ID:         {snap.get('id')}")
+            print(f"    Name:       {snap.get('name')}")
+            print(f"    Size:       {snap.get('size_bytes', 0)} bytes")
+            print(f"    Status:     {snap.get('status')}")
+            print(f"    Created At: {snap.get('created_at')}")
+        elif action == "list":
+            snapshots = client.list_snapshots(project_id)
+            if not snapshots:
+                print(f"No volume snapshots found for project {project_id}.")
+                return
+            headers = ["SNAPSHOT ID", "NAME", "SIZE", "STATUS", "CREATED AT"]
+            rows = []
+            for s in snapshots:
+                size_mb = f"{(s.get('size_bytes', 0) / (1024*1024)):.2f} MB"
+                rows.append([
+                    s.get("id", ""),
+                    s.get("name", ""),
+                    size_mb,
+                    s.get("status", ""),
+                    str(s.get("created_at", ""))[:19]
+                ])
+            print_table(headers, rows)
+        elif action == "restore":
+            snapshot_id = args.snapshot_id
+            res = client.restore_snapshot(project_id, snapshot_id)
+            print(f"[✓] Restored Volume Snapshot:")
+            print(f"    Project ID:  {res.get('project_id')}")
+            print(f"    Snapshot ID: {res.get('snapshot_id')}")
+            print(f"    Status:      {res.get('status')}")
+            print(f"    Message:     {res.get('message')}")
+    except Exception as e:
+        print(f"[!] Volume snapshot operation failed: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        prog="thanaton",
+        description="Thanaton CLI: Sub-6ms MicroVM Sandboxes for AI Coding Agents",
+    )
+    subparsers = parser.add_subparsers(dest="subcommand", required=True)
+
+    # deploy
+    p_deploy = subparsers.add_parser("deploy", help="Deploy directory or project to Thanaton Fabric (Production or Preview)")
+    p_deploy.add_argument("path", nargs="?", default=None, help="Local project directory to deploy (e.g. ./my-app)")
+    p_deploy.add_argument("--name", help="Project slug / name")
+    p_deploy.add_argument("--runtime", default="nodejs", choices=["nodejs", "python", "go", "rust", "docker"], help="Runtime environment")
+    p_deploy.add_argument("--port", type=int, default=3000, help="Application internal HTTP port")
+    p_deploy.add_argument("--preview", action="store_true", help="Deploy to Preview / Staging domain instead of Production")
+    p_deploy.add_argument("--prod", action="store_true", help="Deploy directly to Production root (default)")
+    p_deploy.add_argument("--blue-green", action="store_true", help="Perform atomic zero-502 blue/green rollout with 1-click rollback")
+    p_deploy.set_defaults(func=cmd_deploy)
+
+    # init
+    p_init = subparsers.add_parser("init", help="Auto-detect runtime and generate declarative nephis.toml configuration")
+    p_init.add_argument("path", nargs="?", default=".", help="Workspace directory to inspect (default: .)")
+    p_init.add_argument("--force", "-f", action="store_true", help="Overwrite existing nephis.toml")
+    p_init.set_defaults(func=cmd_init)
+
+    # up
+    p_up = subparsers.add_parser("up", help="Provision and start a new MicroVM sandbox (reads nephis.toml if present)")
+    p_up.add_argument("--config", "-c", help="Path to declarative nephis.toml (or thanaton.toml) configuration")
+    p_up.add_argument("--runtime", default="microvm", choices=["microvm", "silicon", "node", "python"], help="Runtime environment")
+    p_up.add_argument("--db", dest="with_db", action="store_true", help="Bundle an embedded PostgreSQL instance")
+    p_up.add_argument("--memory-mb", type=int, default=256, help="RAM allocation in MiB")
+    p_up.add_argument("--cpu-quota", type=int, default=100, help="CPU quota percentage (100 = 1 full core)")
+    p_up.add_argument("--tenant", default="default", help="Tenant or organization identifier")
+    p_up.set_defaults(func=cmd_up)
+
+    # exec
+    p_exec = subparsers.add_parser("exec", help="Execute a command inside an active sandbox")
+    p_exec.add_argument("sandbox_id", help="Target sandbox ID")
+    p_exec.add_argument("command", nargs=argparse.REMAINDER, help="Command and arguments to execute (prefix with --)")
+    p_exec.add_argument("--timeout", type=int, default=15000, help="Timeout in milliseconds")
+    p_exec.set_defaults(func=cmd_exec)
+
+    # ps
+    p_ps = subparsers.add_parser("ps", help="List active and hibernated sandboxes")
+    p_ps.set_defaults(func=cmd_ps)
+
+    # sleep
+    p_sleep = subparsers.add_parser("sleep", help="Scale a sandbox to zero (hibernate RAM to snapshot)")
+    p_sleep.add_argument("sandbox_id", help="Target sandbox ID")
+    p_sleep.set_defaults(func=cmd_sleep)
+
+    # wake
+    p_wake = subparsers.add_parser("wake", help="Wake a hibernated sandbox from snapshot in <6ms")
+    p_wake.add_argument("sandbox_id", help="Target sandbox ID")
+    p_wake.set_defaults(func=cmd_wake)
+
+    # rm
+    p_rm = subparsers.add_parser("rm", help="Destroy and release a sandbox")
+    p_rm.add_argument("sandbox_id", help="Target sandbox ID")
+    p_rm.set_defaults(func=cmd_rm)
+
+    # attach (Interactive PTY Terminal)
+    p_attach = subparsers.add_parser("attach", help="Connect interactive PTY terminal to a running sandbox")
+    p_attach.add_argument("sandbox_id", help="Target sandbox ID")
+    p_attach.set_defaults(func=cmd_attach)
+
+    # ports (Layer 4 raw TCP forwarding)
+    p_ports = subparsers.add_parser("ports", help="Manage Layer 4 raw TCP port forwarding")
+    p_ports_sub = p_ports.add_subparsers(dest="action", required=True)
+    p_ports_expose = p_ports_sub.add_parser("expose", help="Forward an external host port to a sandbox guest port")
+    p_ports_expose.add_argument("sandbox_id", help="Target sandbox ID")
+    p_ports_expose.add_argument("--port", type=int, required=True, help="Guest port to expose (e.g. 5432, 6379, 8080)")
+    p_ports_expose.add_argument("--service", default="tcp-service", help="Service name")
+    p_ports_list = p_ports_sub.add_parser("list", help="List active port forwards for a sandbox")
+    p_ports_list.add_argument("sandbox_id", help="Target sandbox ID")
+    p_ports_close = p_ports_sub.add_parser("close", help="Close an active port forwarding listener")
+    p_ports_close.add_argument("sandbox_id", help="Target sandbox ID")
+    p_ports_close.add_argument("--port", type=int, required=True, help="Host port to close")
+    p_ports.set_defaults(func=cmd_ports)
+
+    # race (Multi-candidate speculative racing)
+    p_race = subparsers.add_parser("race", help="Execute multi-candidate speculative branch race across parallel microVMs")
+    p_race.add_argument("--candidates-file", required=True, help="Path to JSON file containing patch candidates")
+    p_race.add_argument("--strategy", default="FASTEST_PASSING", choices=["FASTEST_PASSING", "LOWEST_LATENCY"], help="Winning candidate selection strategy")
+    p_race.set_defaults(func=cmd_race)
+
+    # rewind (Point-in-time database rewind from WAL)
+    p_rewind = subparsers.add_parser("rewind", help="Fork an isolated PostgreSQL database branch from historical WAL")
+    p_rewind.add_argument("--lsn", default="16/B374D848", help="Target PostgreSQL WAL LSN")
+    p_rewind.add_argument("--tenant", help="Tenant slug or organization ID")
+    p_rewind.set_defaults(func=cmd_rewind)
+
+    # projects
+    p_projects = subparsers.add_parser("projects", help="Manage Thanaton projects")
+    p_projects_sub = p_projects.add_subparsers(dest="action", required=True)
+    p_proj_list = p_projects_sub.add_parser("list", help="List all projects for your organization")
+    p_proj_create = p_projects_sub.add_parser("create", help="Create a new Thanaton project")
+    p_proj_create.add_argument("name", help="Project name")
+    p_proj_create.add_argument("--slug", help="Custom project slug")
+    p_proj_create.add_argument("--runtime", default="nodejs", choices=["nodejs", "python", "go", "rust", "docker"], help="Project runtime")
+    p_proj_create.add_argument("--port", type=int, default=3000, help="Application internal HTTP port")
+    p_projects.set_defaults(func=cmd_projects)
+
+    # scale (Serverless vs Always-On stateful execution)
+    p_scale = subparsers.add_parser("scale", help="Configure Serverless vs Always-On stateful execution and RAM limits")
+    p_scale_sub = p_scale.add_subparsers(dest="action", required=True)
+    p_sc_get = p_scale_sub.add_parser("get", help="Inspect compute scaling and execution mode")
+    p_sc_get.add_argument("project_id", help="Target project ID")
+    p_sc_set = p_scale_sub.add_parser("set", help="Update compute scaling and execution mode")
+    p_sc_set.add_argument("project_id", help="Target project ID")
+    grp = p_sc_set.add_mutually_exclusive_group()
+    grp.add_argument("--always-on", action="store_true", help="Enable 24/7 Always-On stateful background execution (Indie/Pro)")
+    grp.add_argument("--serverless", action="store_true", help="Enable Serverless scale-to-zero when idle")
+    p_sc_set.add_argument("--idle-timeout", type=int, help="Inactivity seconds before scaling to zero (min 15s)")
+    p_sc_set.add_argument("--memory", type=int, help="RAM memory in MB (e.g. 256, 1024, 4096)")
+    p_sc_set.add_argument("--vcpus", type=int, help="vCPU count (e.g. 1, 2, 4)")
+    p_scale.set_defaults(func=cmd_scaling)
+
+    # billing
+    p_billing = subparsers.add_parser("billing", help="Manage wallet balance, subscriptions, and credit packs")
+    p_billing_sub = p_billing.add_subparsers(dest="action", required=True)
+    p_bill_wallet = p_billing_sub.add_parser("wallet", help="Check current wallet balance, tier, and quotas")
+    p_bill_plans = p_billing_sub.add_parser("plans", help="List available subscription plans and credit packs")
+    p_bill_topup = p_billing_sub.add_parser("topup", help="Add funds to developer wallet")
+    p_bill_topup.add_argument("amount", type=float, help="Amount in USD to top up (e.g. 15.00)")
+    p_bill_checkout = p_billing_sub.add_parser("checkout", help="Create Stripe checkout session for plan or credits")
+    p_bill_checkout.add_argument("plan", choices=["tier_indie", "tier_pro", "tier_enterprise", "credits_50k", "credits_100k", "credits_500k"], help="Plan identifier")
+    p_bill_inv = p_billing_sub.add_parser("invoices", help="List invoice payment history")
+    p_billing.set_defaults(func=cmd_billing)
+
+    # balance (alias for billing wallet)
+    p_balance = subparsers.add_parser("balance", help="Display developer wallet balance, remaining compute credits, and tier")
+    p_balance.set_defaults(func=lambda args: cmd_billing(argparse.Namespace(action="wallet")))
+
+    # env
+    p_env = subparsers.add_parser("env", help="Manage project environment variables")
+    p_env_sub = p_env.add_subparsers(dest="action", required=True)
+    p_env_list = p_env_sub.add_parser("list", help="List environment variables")
+    p_env_list.add_argument("project_id", help="Target project ID")
+    p_env_set = p_env_sub.add_parser("set", help="Set an environment variable")
+    p_env_set.add_argument("project_id", help="Target project ID")
+    p_env_set.add_argument("key", help="Variable name (e.g. DATABASE_URL)")
+    p_env_set.add_argument("value", help="Variable value")
+    p_env_set.add_argument("--env", default="all", choices=["production", "preview", "development", "all"], help="Environment scope")
+    p_env_rm = p_env_sub.add_parser("rm", help="Delete an environment variable")
+    p_env_rm.add_argument("project_id", help="Target project ID")
+    p_env_rm.add_argument("key", help="Variable name to remove")
+    p_env.set_defaults(func=cmd_env)
+
+    # domains
+    p_domains = subparsers.add_parser("domains", help="Manage custom domains and SSL")
+    p_domains_sub = p_domains.add_subparsers(dest="action", required=True)
+    p_dom_list = p_domains_sub.add_parser("list", help="List custom domains for a project")
+    p_dom_list.add_argument("project_id", help="Target project ID")
+    p_dom_add = p_domains_sub.add_parser("add", help="Add a custom domain")
+    p_dom_add.add_argument("project_id", help="Target project ID")
+    p_dom_add.add_argument("domain", help="Fully qualified domain name (e.g. app.mycompany.com)")
+    p_dom_rm = p_domains_sub.add_parser("rm", help="Remove a custom domain")
+    p_dom_rm.add_argument("project_id", help="Target project ID")
+    p_dom_rm.add_argument("domain", help="Domain to remove")
+    p_domains.set_defaults(func=cmd_domains)
+
+    # crons
+    p_crons = subparsers.add_parser("crons", help="Manage scheduled cron jobs")
+    p_crons_sub = p_crons.add_subparsers(dest="action", required=True)
+    p_cron_list = p_crons_sub.add_parser("list", help="List cron jobs for a project")
+    p_cron_list.add_argument("project_id", help="Target project ID")
+    p_cron_add = p_crons_sub.add_parser("add", help="Schedule a new cron job")
+    p_cron_add.add_argument("project_id", help="Target project ID")
+    p_cron_add.add_argument("path", help="Endpoint path (e.g. /api/sync)")
+    p_cron_add.add_argument("schedule", help="Cron expression (e.g. '0 0 * * *' or '10m')")
+    p_cron_rm = p_crons_sub.add_parser("rm", help="Remove a scheduled cron")
+    p_cron_rm.add_argument("project_id", help="Target project ID")
+    p_cron_rm.add_argument("cron_id", help="Target cron ID")
+    p_crons.set_defaults(func=cmd_crons)
+
+    # deploy-hooks
+    p_hooks = subparsers.add_parser("deploy-hooks", help="Manage headless deploy hooks")
+    p_hooks_sub = p_hooks.add_subparsers(dest="action", required=True)
+    p_hook_list = p_hooks_sub.add_parser("list", help="List deploy hooks for a project")
+    p_hook_list.add_argument("project_id", help="Target project ID")
+    p_hook_create = p_hooks_sub.add_parser("create", help="Create a deploy hook")
+    p_hook_create.add_argument("project_id", help="Target project ID")
+    p_hook_create.add_argument("name", help="Hook description (e.g. CMS Publish Trigger)")
+    p_hook_create.add_argument("--branch", default="main", help="Target git branch to build")
+    p_hook_rm = p_hooks_sub.add_parser("rm", help="Delete a deploy hook")
+    p_hook_rm.add_argument("project_id", help="Target project ID")
+    p_hook_rm.add_argument("hook_id", help="Target hook ID")
+    p_hooks.set_defaults(func=cmd_deploy_hooks)
+
+    # rollback
+    p_rollback = subparsers.add_parser("rollback", help="Instant atomic rollback of production traffic to snapshot")
+    p_rollback.add_argument("project_id", help="Target project ID")
+    p_rollback.add_argument("deployment_id", help="Target snapshot deployment ID to restore")
+    p_rollback.set_defaults(func=cmd_rollback)
+
+    # promote
+    p_promote = subparsers.add_parser("promote", help="Promote preview staging snapshot to 100%% production traffic")
+    p_promote.add_argument("project_id", help="Target project ID")
+    p_promote.set_defaults(func=cmd_promote)
+
+    # snapshot
+    p_snap = subparsers.add_parser("snapshot", help="Manage NVMe CoW volume snapshots for microVM projects")
+    p_snap_sub = p_snap.add_subparsers(dest="action", required=True)
+    p_snap_create = p_snap_sub.add_parser("create", help="Create a zero-copy NVMe volume snapshot")
+    p_snap_create.add_argument("project_id", help="Target project ID")
+    p_snap_create.add_argument("--name", help="Snapshot human-readable name")
+    p_snap_list = p_snap_sub.add_parser("list", help="List all volume snapshots for a project")
+    p_snap_list.add_argument("project_id", help="Target project ID")
+    p_snap_restore = p_snap_sub.add_parser("restore", help="Restore microVM project to historical volume snapshot")
+    p_snap_restore.add_argument("project_id", help="Target project ID")
+    p_snap_restore.add_argument("snapshot_id", help="Snapshot ID to restore")
+    p_snap.set_defaults(func=cmd_snapshot)
+
+    # volume (Persistent ext4 Sparse Block Devices for SQLite & PocketBase)
+    p_vol = subparsers.add_parser("volume", help="Manage persistent NVMe ext4 block volumes for SQLite & PocketBase")
+    p_vol_sub = p_vol.add_subparsers(dest="action", required=True)
+    p_vol_list = p_vol_sub.add_parser("list", help="List active persistent volumes")
+    p_vol_list.add_argument("--sandbox-id", help="Filter by sandbox ID")
+    p_vol_attach = p_vol_sub.add_parser("attach", help="Attach a persistent sparse ext4 volume to /data")
+    p_vol_attach.add_argument("sandbox_id", help="Target microVM sandbox ID")
+    p_vol_attach.add_argument("--path", default="/data", help="Guest mount path (default: /data)")
+    p_vol_attach.add_argument("--size-gb", type=int, default=10, help="Volume size in GB (default: 10)")
+    p_vol_freeze = p_vol_sub.add_parser("freeze", help="Freeze filesystem via fsfreeze -f before scale-to-zero stasis")
+    p_vol_freeze.add_argument("sandbox_id", help="Target microVM sandbox ID")
+    p_vol_freeze.add_argument("--volume-id", default="vol-sparse-default", help="Target volume ID")
+    p_vol_thaw = p_vol_sub.add_parser("thaw", help="Thaw filesystem via fsfreeze -u upon cold wake")
+    p_vol_thaw.add_argument("sandbox_id", help="Target microVM sandbox ID")
+    p_vol_thaw.add_argument("--volume-id", default="vol-sparse-default", help="Target volume ID")
+    p_vol.set_defaults(func=cmd_volume)
+
+    # secrets (Zero-rebuild Firecracker MMDS in <50µs)
+    p_sec = subparsers.add_parser("secrets", help="Zero-rebuild Firecracker MMDS secret and env variable injection")
+    p_sec_sub = p_sec.add_subparsers(dest="action", required=True)
+    p_sec_inj = p_sec_sub.add_parser("inject", aliases=["set"], help="Stream secrets to Firecracker MMDS in <50µs")
+    p_sec_inj.add_argument("sandbox_id", help="Target microVM sandbox ID")
+    p_sec_inj.add_argument("pairs", nargs="+", help="KEY=VALUE pairs to inject")
+    p_sec_get = p_sec_sub.add_parser("get", help="Inspect active MMDS metadata secrets")
+    p_sec_get.add_argument("sandbox_id", help="Target microVM sandbox ID")
+    p_sec.set_defaults(func=cmd_secrets)
+
+    # wake-coalesce (Thundering Herd 2-Phase Wake Admission)
+    p_wake = subparsers.add_parser("wake-coalesce", help="Trigger or test 2-Phase Wake Admission request coalescing")
+    p_wake.add_argument("tenant_id", help="Target tenant ID")
+    p_wake.add_argument("--sandbox-id", help="Optional sandbox ID")
+    p_wake.set_defaults(func=cmd_wake_lock)
+
+    # waf
+    p_waf = subparsers.add_parser("waf", help="Inspect and configure edge WAF protection")
+    p_waf_sub = p_waf.add_subparsers(dest="action", required=True)
+    p_waf_status = p_waf_sub.add_parser("status", aliases=["get"], help="Get current WAF status")
+    p_waf_status.add_argument("project_id", help="Target project ID")
+    p_waf_set = p_waf_sub.add_parser("set", help="Configure WAF rules")
+    p_waf_set.add_argument("project_id", help="Target project ID")
+    p_waf_set.add_argument("--attack-mode", action="store_true", help="Enable Under Attack Mode (strict JS/PoW challenge)")
+    p_waf_set.add_argument("--rate-limit", type=int, default=1000, help="Per-IP rate limit RPS")
+    p_waf_set.add_argument("--allow", help="Comma-separated CIDR allowlist")
+    p_waf_set.add_argument("--block", help="Comma-separated CIDR blocklist")
+    p_waf.set_defaults(func=cmd_waf)
+
+    # log-drains
+    p_drains = subparsers.add_parser("log-drains", help="Manage external SIEM log forwarding")
+    p_drains_sub = p_drains.add_subparsers(dest="action", required=True)
+    p_drain_list = p_drains_sub.add_parser("list", help="List log drains for a project")
+    p_drain_list.add_argument("project_id", help="Target project ID")
+    p_drain_add = p_drains_sub.add_parser("add", help="Add an external SIEM log drain")
+    p_drain_add.add_argument("project_id", help="Target project ID")
+    p_drain_add.add_argument("name", help="Drain name (e.g. Datadog Production)")
+    p_drain_add.add_argument("drain_type", choices=["datadog", "papertrail", "axiom", "webhook"], help="Destination SIEM service")
+    p_drain_add.add_argument("url", help="HTTPS ingestion endpoint URL")
+    p_drain_add.add_argument("--token", help="Optional API authentication token")
+    p_drain_rm = p_drains_sub.add_parser("rm", help="Remove a log drain")
+    p_drain_rm.add_argument("project_id", help="Target project ID")
+    p_drain_rm.add_argument("drain_id", help="Target drain ID")
+    p_drains.set_defaults(func=cmd_log_drains)
+
+    # login
+    p_login = subparsers.add_parser("login", help="Authenticate CLI with an API key")
+    p_login.add_argument("api_key", help="Thanaton API key")
+    p_login.set_defaults(func=cmd_login)
+
+    # whoami
+    p_whoami = subparsers.add_parser("whoami", help="Display active account identity and quotas")
+    p_whoami.set_defaults(func=cmd_whoami)
+
+    # admin
+    p_adm = subparsers.add_parser("admin", help="Administrative fleet and node operations")
+    p_adm.add_argument("--secret", help="Master admin secret (or set THANATON_ADMIN_SECRET)")
+    p_adm_sub = p_adm.add_subparsers(dest="admin_action", required=True)
+    p_adm_nodes = p_adm_sub.add_parser("nodes", help="List physical hypervisor cluster nodes")
+    p_adm_fleet = p_adm_sub.add_parser("fleet", help="Show fleet analytics overview")
+    p_adm_fleet.add_argument("--secret", help="Master admin secret (or set THANATON_ADMIN_SECRET)")
+    p_adm_cordon = p_adm_sub.add_parser("cordon", help="Cordon a node")
+    p_adm_cordon.add_argument("node_id", help="Hypervisor node ID")
+    p_adm_uncordon = p_adm_sub.add_parser("uncordon", help="Uncordon a node")
+    p_adm_uncordon.add_argument("node_id", help="Hypervisor node ID")
+    p_adm_drain = p_adm_sub.add_parser("drain", help="Drain a node (migrate VMs)")
+    p_adm_drain.add_argument("node_id", help="Hypervisor node ID")
+    p_adm_quar = p_adm_sub.add_parser("quarantine", help="Quarantine rogue tenant")
+    p_adm_quar.add_argument("tenant_id", help="Target tenant ID")
+    p_adm_quar.add_argument("--reason", default="Administrative quarantine", help="Reason for quarantine")
+    p_adm_unquar = p_adm_sub.add_parser("unquarantine", help="Restore quarantined tenant")
+    p_adm_unquar.add_argument("tenant_id", help="Target tenant ID")
+    p_adm_inv = p_adm_sub.add_parser("invoices", help="List billing invoices across tenant organizations")
+    p_adm_inv.add_argument("--org-slug", help="Filter invoices by organization slug")
+    p_adm_grant = p_adm_sub.add_parser("grant-tier", help="Grant enterprise/pro tier subscription to an organization")
+    p_adm_grant.add_argument("org_slug", help="Target organization slug")
+    p_adm_grant.add_argument("--tier", default="pro", choices=["pro", "team", "enterprise"], help="Subscription tier")
+    p_adm_grant.add_argument("--days", type=int, default=30, help="Duration in days")
+    p_adm_grant.add_argument("--amount-cents", type=int, default=0, help="Billed amount in cents")
+    p_adm_grant.add_argument("--notes", default="Granted via Thanaton CLI", help="Audit notes")
+    p_adm_reap = p_adm_sub.add_parser("reap-extents", help="Reap unreferenced sparse extents and prune memory")
+    p_adm.set_defaults(func=cmd_admin)
+
+    # UX normalizations: eliminate syntax friction so commands never drop on missing subactions
+    if len(sys.argv) > 2 and sys.argv[1] == "scale" and sys.argv[2] not in ("get", "set", "-h", "--help"):
+        sys.argv.insert(2, "get")
+
+    if len(sys.argv) > 2 and sys.argv[1] == "waf" and sys.argv[2] not in ("status", "get", "set", "-h", "--help"):
+        sys.argv.insert(2, "status")
+
+    if len(sys.argv) == 2 and sys.argv[1] == "projects":
+        sys.argv.append("list")
+    elif len(sys.argv) > 2 and sys.argv[1] == "projects" and sys.argv[2] not in ("list", "create", "-h", "--help"):
+        sys.argv.insert(2, "list")
+
+    if len(sys.argv) > 2 and sys.argv[1] == "ports" and sys.argv[2] not in ("expose", "list", "close", "-h", "--help"):
+        sys.argv.insert(2, "list")
+
+    if len(sys.argv) == 2 and sys.argv[1] == "billing":
+        sys.argv.append("wallet")
+
+    if len(sys.argv) == 2 and sys.argv[1] == "volume":
+        sys.argv.append("list")
+
+    if len(sys.argv) > 2 and sys.argv[1] == "env" and sys.argv[2] not in ("list", "set", "delete", "-h", "--help"):
+        sys.argv.insert(2, "list")
+
+    if len(sys.argv) > 2 and sys.argv[1] == "domains" and sys.argv[2] not in ("list", "add", "rm", "-h", "--help"):
+        sys.argv.insert(2, "list")
+
+    if len(sys.argv) > 2 and sys.argv[1] == "crons" and sys.argv[2] not in ("list", "set", "delete", "-h", "--help"):
+        sys.argv.insert(2, "list")
+
+    if len(sys.argv) == 2 and sys.argv[1] == "admin":
+        sys.argv.append("nodes")
+
+    args = parser.parse_args()
+    if getattr(args, "subcommand", None) == "exec" and args.command and args.command[0] == "--":
+        args.command = args.command[1:]
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()

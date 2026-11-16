@@ -1,0 +1,15 @@
+#!/usr/bin/env python3
+"""Eschaton CLI Launcher"""
+import os
+import sys
+from pathlib import Path
+
+current_dir = Path(__file__).resolve().parent
+sdk_python_dir = current_dir.parent / "python"
+if str(sdk_python_dir) not in sys.path:
+    sys.path.insert(0, str(sdk_python_dir))
+
+from eschaton.cli import main
+
+if __name__ == "__main__":
+    main()
