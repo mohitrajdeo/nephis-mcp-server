@@ -131,6 +131,25 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(toolNames.includes("mnemon_manage_extensions"));
     assert.ok(toolNames.includes("mnemon_get_slow_queries"));
 
+    // Mnemon Advanced Subsystems & Continuous Recovery Tools
+    assert.ok(toolNames.includes("mnemon_time_travel"));
+    assert.ok(toolNames.includes("mnemon_branch_lineage"));
+    assert.ok(toolNames.includes("mnemon_reconcile_schema"));
+    assert.ok(toolNames.includes("mnemon_query_advisor"));
+    assert.ok(toolNames.includes("mnemon_create_snapshot"));
+    assert.ok(toolNames.includes("mnemon_list_snapshots"));
+    assert.ok(toolNames.includes("mnemon_pitr_timelines"));
+    assert.ok(toolNames.includes("mnemon_pitr_restore"));
+    assert.ok(toolNames.includes("mnemon_cdc_stats"));
+    assert.ok(toolNames.includes("mnemon_cdc_publish"));
+    assert.ok(toolNames.includes("mnemon_import_database"));
+    assert.ok(toolNames.includes("mnemon_import_status"));
+    assert.ok(toolNames.includes("mnemon_import_cutover"));
+    assert.ok(toolNames.includes("mnemon_vector_quantize"));
+    assert.ok(toolNames.includes("mnemon_vector_stats"));
+    assert.ok(toolNames.includes("mnemon_admin_kill_query"));
+    assert.ok(toolNames.includes("mnemon_admin_reap_branches"));
+
     // Head PTY, L4 Port, Speculative Race & WAL Rewind Tools
     assert.ok(toolNames.includes("thanaton_pty_info"));
     assert.ok(toolNames.includes("thanaton_expose_port"));
@@ -161,7 +180,15 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(toolNames.includes("thanaton_list_invoices"));
     assert.ok(toolNames.includes("nephis_whoami"));
 
-    assert.equal(res.result.tools.length, 63);
+    // Eschaton CS Laboratory & Multi-Suite Tools
+    assert.ok(toolNames.includes("eschaton_execute_suite"));
+    assert.ok(toolNames.includes("eschaton_complexity_profile"));
+    assert.ok(toolNames.includes("eschaton_sanitize_check"));
+    assert.ok(toolNames.includes("eschaton_dbms_eval"));
+    assert.ok(toolNames.includes("eschaton_fileio_eval"));
+    assert.ok(toolNames.includes("eschaton_special_judge"));
+
+    assert.equal(res.result.tools.length, 86);
   });
 
   let provisionedSandboxId = "";

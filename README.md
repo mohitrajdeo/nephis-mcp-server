@@ -6,7 +6,7 @@
 [![MCP Protocol](https://img.shields.io/badge/MCP-Protocol%202024--11--05-purple.svg)](https://modelcontextprotocol.io/)
 [![npm version](https://img.shields.io/npm/v/nephis-mcp-server.svg)](https://www.npmjs.com/package/nephis-mcp-server)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tools Count](https://img.shields.io/badge/Tools-53%20Production%20Tools-brightgreen.svg)](#-exhaustive-catalog-of-all-53-mcp-tools)
+[![Tools Count](https://img.shields.io/badge/Tools-63%20Production%20Tools-brightgreen.svg)](#-exhaustive-catalog-of-all-63-mcp-tools)
 
 ---
 
@@ -30,9 +30,9 @@ When an autonomous AI agent launches `nephis-mcp-server` without an explicit `NE
 4. **Zero human logins, zero credit cards, zero browser popups required.** Human developers can also claim their session with 1-click GitHub OAuth on [nephis.theeducode.com](https://nephis.theeducode.com) to upgrade to 2,000 monthly credits.
 
 The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants directly to bare-metal compute and database substrates across 4 sovereign pillars:
-1. **THANATON (24 Tools):** Hardware KVM microVM sandboxes, sub-6ms boot, scale-to-zero stasis ($0 idle RAM), PTY terminals, and Layer 4 port forwards.
+1. **THANATON (33 Tools):** Hardware KVM microVM sandboxes, sub-6ms boot, scale-to-zero stasis ($0 idle RAM), PTY terminals, Layer 4 port forwards, project deployments, custom domains, crons, webhooks, and SIEM drains.
 2. **MNEMON-DB (14 Tools):** 30ms zero-copy PostgreSQL 16 branching (XFS CoW reflinks), embedded vector search, schema diffing, and WAL rewind.
-3. **ESCHATON & NEPHIS (3 Tools):** Sub-38ms parallel online code judging, in-memory AST hazard detection (<50µs), and 50-testcase fast-batch execution.
+3. **ESCHATON & NEPHIS (4 Tools):** Sub-38ms parallel online code judging, in-memory AST hazard detection (<50µs), 50-testcase fast-batch execution, and tenant whoami introspection.
 4. **ANANKE SYSTEMS (12 Tools):** Kernel infrastructure, eBPF connection pooling, zero-copy S3 streaming pipes, tombstone crash autopsy, and live socket migration.
 
 ```
@@ -42,7 +42,7 @@ The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants directl
                             │ JSON-RPC 2.0 (stdio / SSE)
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│ NEPHIS Unified MCP Server (53 Sovereign Tools)         │
+│ NEPHIS Unified MCP Server (63 Sovereign Tools)         │
 └───────┬───────────────────┬───────────────────┬────────┘
         │                   │                   │
         ▼                   ▼                   ▼
@@ -128,15 +128,15 @@ Add `nephis` to your project's `antigravity.json` or run `npx nephis-mcp-server`
 
 | Category | Count | Focus Areas |
 | :--- | :---: | :--- |
-| [THANATON (Compute & Sandboxes)](#1-thanaton--hardware-kvm-microvms--compute-sandboxes) | 24 | MicroVM boot, PTY, ports, secrets, volumes, projects, WAF |
+| [THANATON (Compute, Deploy & Edge)](#1-thanaton--hardware-kvm-microvms--compute-sandboxes) | 33 | MicroVM boot, PTY, ports, secrets, volumes, projects, WAF, domains, crons, hooks, routes, drains, wallet, invoices |
 | [MNEMON-DB (Databases & Vector)](#2-mnemon-db--zero-copy-isolated-database-engine--branching) | 14 | 30ms CoW branching, SQL queries, schema diff, pgvector, WAL rewind |
-| [ESCHATON & NEPHIS (Execution)](#3-eschaton--nephis--autonomous-polyglot-code-execution--fast-batch) | 3 | AST preflight, 50-testcase fast-batch, compiler pipeline |
+| [ESCHATON & NEPHIS (Execution & Identity)](#3-eschaton--nephis--autonomous-polyglot-code-execution--fast-batch) | 4 | AST preflight, 50-testcase fast-batch, compiler pipeline, whoami |
 | [ANANKE SYSTEMS (Kernel Infrastructure)](#4-ananke-systems--kernel-infrastructure-finops--reliability) | 12 | eBPF pooler, S3 pipe, crash autopsy, chaos, live socket migration |
-| **Total Production Tools** | **53** | **100% Machine-Readable & Standardized** |
+| **Total Production Tools** | **63** | **100% Machine-Readable & Standardized** |
 
 ---
 
-## 🛠 Exhaustive Catalog of All 53 MCP Tools
+## 🛠 Exhaustive Catalog of All 63 MCP Tools
 
 
 ## THANATON • Hardware KVM MicroVMs & Compute Sandboxes

@@ -242,6 +242,7 @@ async function callThanatonApi(endpoint: string, options: RequestInit = {}): Pro
   const apiKey = await getOrResolveApiKey();
   if (apiKey) {
     headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["X-API-Key"] = apiKey;
   }
 
   try {
@@ -281,6 +282,7 @@ async function callMnemonApi(endpoint: string, options: RequestInit = {}): Promi
   const apiKey = await getOrResolveApiKey();
   if (apiKey) {
     headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["X-API-Key"] = apiKey;
   }
 
   try {
@@ -309,6 +311,7 @@ async function callEschatonApi(endpoint: string, options: RequestInit = {}): Pro
   const apiKey = await getOrResolveApiKey();
   if (apiKey) {
     headers["Authorization"] = `Bearer ${apiKey}`;
+    headers["X-API-Key"] = apiKey;
   }
 
   try {
@@ -840,6 +843,212 @@ const TOOLS: Tool[] = [
     },
   },
   {
+    name: "mnemon_time_travel",
+    description: "Read database branch state at a specific historical point in time (timestamp or LSN) via Lethe continuous WAL replay.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        target_time: { type: "string", description: "ISO 8601 target timestamp (e.g., 2026-11-15T01:00:00Z)" },
+        target_lsn: { type: "number", description: "Numeric WAL Log Sequence Number" },
+        target_branch: { type: "string", description: "Target branch name to instantiate (default: time-travel)" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_branch_lineage",
+    description: "Inspect the visual DAG ancestry and branch lineage tree of CoW database branches.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_reconcile_schema",
+    description: "Perform 3-way schema reconciliation and migration dry-run before merging an ephemeral branch into target.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        branch: { type: "string", description: "Source branch identifier to reconcile" },
+        target_branch: { type: "string", description: "Target branch to reconcile against (default: main)" },
+      },
+      required: ["tenant_id", "branch"],
+    },
+  },
+  {
+    name: "mnemon_query_advisor",
+    description: "Inspect slow query execution plans, automated FinOps index recommendations, and circuit breaker health.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_create_snapshot",
+    description: "Create a persistent point-in-time storage snapshot of a database cluster branch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        name: { type: "string", description: "Optional snapshot identifier label" },
+        branch_id: { type: "string", description: "Branch to snapshot (default: main)" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_list_snapshots",
+    description: "List all persistent snapshots taken on a database cluster.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_pitr_timelines",
+    description: "Retrieve continuous WAL archiving timelines and valid point-in-time recovery (PITR) restoration windows.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_pitr_restore",
+    description: "Restore a database cluster to a historical LSN or timestamp on a new branch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        target_branch: { type: "string", description: "Name of new branch for restored state" },
+        target_lsn: { type: "number", description: "Target WAL Log Sequence Number" },
+      },
+      required: ["tenant_id", "target_branch"],
+    },
+  },
+  {
+    name: "mnemon_cdc_stats",
+    description: "Inspect Lethe real-time Change Data Capture (CDC) streaming stats, buffer saturation, and subscriber lag.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_cdc_publish",
+    description: "Publish or inject a transactional mutation event into the Lethe real-time CDC event stream.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        table: { type: "string", description: "Target database table" },
+        action: { type: "string", enum: ["INSERT", "UPDATE", "DELETE"], description: "Mutation action" },
+        data: { type: "object", description: "Row mutation payload" },
+      },
+      required: ["tenant_id", "table", "action", "data"],
+    },
+  },
+  {
+    name: "mnemon_import_database",
+    description: "Initiate zero-downtime 1-click database migration/import from Neon, Supabase, or AWS RDS.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Destination database tenant identifier" },
+        source_url: { type: "string", description: "Source PostgreSQL connection URI" },
+      },
+      required: ["tenant_id", "source_url"],
+    },
+  },
+  {
+    name: "mnemon_import_status",
+    description: "Query current progress, replication lag, and dual-write replication status of active database import.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_import_cutover",
+    description: "Execute zero-downtime cutover, routing all connection pool traffic to Mnemon-DB.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_vector_quantize",
+    description: "Configure pgvector + HNSW-PQ vector quantization with disk-spill indexing for sub-10ms billion-vector search.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        table: { type: "string", description: "Target vector table" },
+        column: { type: "string", description: "Target vector embedding column" },
+        dimensions: { type: "number", description: "Vector dimensions (default: 1536)" },
+        quantization_type: { type: "string", enum: ["PQ", "SQ", "BINARY"], description: "Quantization algorithm (default: PQ)" },
+        disk_spill: { type: "boolean", description: "Enable disk-spill indexing for RAM conservation" },
+      },
+      required: ["tenant_id", "table", "column"],
+    },
+  },
+  {
+    name: "mnemon_vector_stats",
+    description: "Inspect vector index memory savings, quantization ratios, and disk usage across pgvector tables.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_admin_kill_query",
+    description: "Emergency termination of a rogue or long-running query by PID or duration threshold.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        pid: { type: "number", description: "PostgreSQL backend process ID" },
+        query_id: { type: "string", description: "Query identifier" },
+        duration_sec: { type: "number", description: "Kill all queries running longer than this duration (seconds)" },
+      },
+    },
+  },
+  {
+    name: "mnemon_admin_reap_branches",
+    description: "Prune and reclaim storage extents from orphaned ephemeral sandbox or pull-request branches.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        max_age_hours: { type: "number", description: "Reap branches older than this threshold in hours (default: 24)" },
+        dry_run: { type: "boolean", description: "Dry run preview mode without actual extent deletion" },
+      },
+    },
+  },
+  {
     name: "thanaton_get_volumes",
     description: "List persistent ext4 sparse volumes attached to a microVM sandbox for SQLite, PocketBase, or local file storage with scale-to-zero persistence.",
     inputSchema: {
@@ -1198,6 +1407,111 @@ const TOOLS: Tool[] = [
     inputSchema: {
       type: "object",
       properties: {},
+    },
+  },
+  {
+    name: "eschaton_execute_suite",
+    description: "Execute code across any of the 10 Eschaton engine suites (Omni, Apex, Void, Complexity, Sanitizer, MemoryProfile, FileIO, DBMS, SpecialJudge) with custom testcase matrices.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        language_id: { type: "number", description: "Language ID (e.g. 54 for C++, 71 for Python 3, 202 for C++20, 204 for Python 3.11)" },
+        source_code: { type: "string", description: "Source code to execute" },
+        suite: { type: "string", enum: ["Omni", "Apex", "Void", "Complexity", "Sanitizer", "MemoryProfile", "FileIO", "DBMS", "SpecialJudge"], default: "Omni", description: "Execution suite" },
+        test_cases: {
+          type: "array",
+          description: "List of testcases with stdin, expected_output, and optional schema_sql or files",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "number" },
+              stdin: { type: "string" },
+              expected_output: { type: "string" },
+              schema_sql: { type: "string" },
+              files: { type: "object" },
+              output_file: { type: "string" },
+            },
+          },
+        },
+        database: { type: "string", enum: ["sqlite", "postgres", "mysql", "oracle"], description: "Database engine for DBMS suite" },
+        checker_code: { type: "string", description: "Custom validator checker source code for SpecialJudge suite" },
+        checker_language_id: { type: "number", description: "Checker language ID (default 202)" },
+        verbose: { type: "number", enum: [0, 1], description: "Verbose mode (0=early-exit short-circuit, 1=full diagnostics for Void suite)" },
+      },
+      required: ["language_id", "source_code"],
+    },
+  },
+  {
+    name: "eschaton_complexity_profile",
+    description: "Deterministic cycle and instruction counter via Valgrind Lackey: measures exact guest instruction counts to mathematically prove O(N) vs O(N^2) complexity immune to CPU jitter.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        language_id: { type: "number", default: 202, description: "C or C++ language ID (e.g. 50, 54, 201, 202)" },
+        source_code: { type: "string", description: "C/C++ algorithm source code to profile" },
+        stdin: { type: "string", default: "100", description: "Standard input for algorithm" },
+      },
+      required: ["source_code"],
+    },
+  },
+  {
+    name: "eschaton_sanitize_check",
+    description: "Sub-20ms AddressSanitizer (ASan) + UndefinedBehaviorSanitizer (UBSan) safety check: detects buffer overflows, memory leaks, and use-after-free bugs.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        language_id: { type: "number", default: 202, description: "C or C++ language ID (e.g. 50, 54, 201, 202)" },
+        source_code: { type: "string", description: "C/C++ source code to sanitize" },
+        stdin: { type: "string", default: "", description: "Standard input" },
+      },
+      required: ["source_code"],
+    },
+  },
+  {
+    name: "eschaton_dbms_eval",
+    description: "Automated SQL database grading across SQLite, PostgreSQL, MySQL, and Oracle: seeds an ephemeral database per testcase with schema_sql DDL/DML and evaluates queries.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        source_code: { type: "string", description: "Python database query/app code" },
+        schema_sql: { type: "string", description: "DDL/DML SQL statements to seed the test database" },
+        database: { type: "string", enum: ["sqlite", "postgres", "mysql", "oracle"], default: "sqlite", description: "Database engine backend" },
+        expected_output: { type: "string", description: "Expected query stdout" },
+        stdin: { type: "string", default: "", description: "Optional standard input" },
+      },
+      required: ["source_code", "schema_sql"],
+    },
+  },
+  {
+    name: "eschaton_fileio_eval",
+    description: "Isolated filesystem sandbox grading: seeds input files into sandbox disk, runs learner code that reads/writes files, and grades generated output file.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        language_id: { type: "number", default: 204, description: "Language ID" },
+        source_code: { type: "string", description: "Source code performing file I/O" },
+        input_filename: { type: "string", default: "input.txt", description: "Input file name to seed" },
+        input_content: { type: "string", default: "DATA", description: "Content of input file" },
+        output_filename: { type: "string", default: "output.txt", description: "Expected output file to read and grade" },
+        expected_output: { type: "string", description: "Expected content of the output file" },
+      },
+      required: ["source_code"],
+    },
+  },
+  {
+    name: "eschaton_special_judge",
+    description: "Custom competitive programming checker binary validator: evaluates solutions with custom tolerances (e.g. 1e-6 float precision), multiple valid outputs, or graph permutations.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        language_id: { type: "number", default: 202, description: "Solution language ID" },
+        source_code: { type: "string", description: "Solution source code" },
+        checker_code: { type: "string", description: "Custom validator checker source code" },
+        checker_language_id: { type: "number", default: 202, description: "Checker language ID" },
+        stdin: { type: "string", default: "5.0", description: "Testcase stdin" },
+        expected_output: { type: "string", default: "2.5", description: "Testcase reference answer" },
+      },
+      required: ["source_code", "checker_code"],
     },
   },
 ];
@@ -1573,6 +1887,126 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "nephis_whoami": {
         const res = await callThanatonApi("/api/v1/auth/whoami");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_execute_suite": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: Number(a.language_id || 202),
+          source_code: String(a.source_code || ""),
+          suite: a.suite || "Omni",
+          test_cases: a.test_cases || [{ id: 1, stdin: "", expected_output: "" }],
+          database: a.database,
+          checker_code: a.checker_code,
+          checker_language_id: a.checker_language_id ? Number(a.checker_language_id) : undefined,
+          verbose: a.verbose !== undefined ? Number(a.verbose) : undefined,
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_complexity_profile": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: Number(a.language_id || 202),
+          source_code: String(a.source_code || ""),
+          suite: "Complexity",
+          test_cases: [{ id: 1, stdin: String(a.stdin || "100") }],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_sanitize_check": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: Number(a.language_id || 202),
+          source_code: String(a.source_code || ""),
+          suite: "Sanitizer",
+          test_cases: [{ id: 1, stdin: String(a.stdin || "") }],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_dbms_eval": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: 204, // Python 3.11 for DBMS
+          source_code: String(a.source_code || ""),
+          suite: "DBMS",
+          database: a.database || "sqlite",
+          test_cases: [
+            {
+              id: 1,
+              schema_sql: String(a.schema_sql || ""),
+              stdin: String(a.stdin || ""),
+              expected_output: a.expected_output ? String(a.expected_output) : undefined,
+            },
+          ],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_fileio_eval": {
+        const a = (args || {}) as any;
+        const inName = String(a.input_filename || "input.txt");
+        const inContent = String(a.input_content || "DATA");
+        const outName = String(a.output_filename || "output.txt");
+        const payload = {
+          language_id: Number(a.language_id || 204),
+          source_code: String(a.source_code || ""),
+          suite: "FileIO",
+          test_cases: [
+            {
+              id: 1,
+              files: { [inName]: inContent },
+              output_file: outName,
+              expected_output: a.expected_output ? String(a.expected_output) : undefined,
+            },
+          ],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_special_judge": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: Number(a.language_id || 202),
+          source_code: String(a.source_code || ""),
+          suite: "SpecialJudge",
+          checker_code: String(a.checker_code || ""),
+          checker_language_id: Number(a.checker_language_id || 202),
+          test_cases: [
+            {
+              id: 1,
+              stdin: String(a.stdin || "5.0"),
+              expected_output: String(a.expected_output || "2.5"),
+            },
+          ],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
@@ -2770,6 +3204,163 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
+      case "mnemon_time_travel": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/branches/time-travel`, {
+          method: "POST",
+          body: JSON.stringify({
+            target_time: a.target_time,
+            target_lsn: a.target_lsn,
+            target_branch: a.target_branch || "time-travel",
+          }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_branch_lineage": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/branches/lineage`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_reconcile_schema": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const branch = String(a.branch || "dev");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/branches/${encodeURIComponent(branch)}/reconcile`, {
+          method: "POST",
+          body: JSON.stringify({ target_branch: a.target_branch || "main" }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_query_advisor": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/queries/advisor`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_create_snapshot": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/snapshots`, {
+          method: "POST",
+          body: JSON.stringify({ name: a.name || `snap_${Date.now()}`, branch_id: a.branch_id || "main" }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_list_snapshots": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/snapshots`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_pitr_timelines": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/pitr/timelines`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_pitr_restore": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/pitr/restore`, {
+          method: "POST",
+          body: JSON.stringify({ target_branch: a.target_branch, target_lsn: a.target_lsn }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_cdc_stats": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/cdc/stats`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_cdc_publish": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/cdc/publish`, {
+          method: "POST",
+          body: JSON.stringify({ table: a.table, action: a.action, data: a.data }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_import_database": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/import`, {
+          method: "POST",
+          body: JSON.stringify({ source_url: a.source_url }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_import_status": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/import/status`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_import_cutover": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/import/cutover`, {
+          method: "POST",
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_vector_quantize": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/vector/quantize`, {
+          method: "POST",
+          body: JSON.stringify({
+            table: a.table,
+            column: a.column,
+            dimensions: a.dimensions || 1536,
+            quantization_type: a.quantization_type || "PQ",
+            disk_spill: a.disk_spill !== false,
+          }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_vector_stats": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/vector/stats`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_admin_kill_query": {
+        const a = (args || {}) as any;
+        const res = await callMnemonApi(`/v1/admin/queries/kill`, {
+          method: "POST",
+          body: JSON.stringify({ pid: a.pid, query_id: a.query_id, duration_sec: a.duration_sec }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_admin_reap_branches": {
+        const a = (args || {}) as any;
+        const res = await callMnemonApi(`/v1/admin/branches/reap`, {
+          method: "POST",
+          body: JSON.stringify({ max_age_hours: a.max_age_hours || 24, dry_run: !!a.dry_run }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
       case "thanaton_get_volumes": {
         const a = (args || {}) as any;
         const sandbox_id = String(a.sandbox_id || "sbx-default");
@@ -3538,6 +4129,126 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "nephis_whoami": {
         const res = await callThanatonApi("/api/v1/auth/whoami");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_execute_suite": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: Number(a.language_id || 202),
+          source_code: String(a.source_code || ""),
+          suite: a.suite || "Omni",
+          test_cases: a.test_cases || [{ id: 1, stdin: "", expected_output: "" }],
+          database: a.database,
+          checker_code: a.checker_code,
+          checker_language_id: a.checker_language_id ? Number(a.checker_language_id) : undefined,
+          verbose: a.verbose !== undefined ? Number(a.verbose) : undefined,
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_complexity_profile": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: Number(a.language_id || 202),
+          source_code: String(a.source_code || ""),
+          suite: "Complexity",
+          test_cases: [{ id: 1, stdin: String(a.stdin || "100") }],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_sanitize_check": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: Number(a.language_id || 202),
+          source_code: String(a.source_code || ""),
+          suite: "Sanitizer",
+          test_cases: [{ id: 1, stdin: String(a.stdin || "") }],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_dbms_eval": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: 204, // Python 3.11 for DBMS
+          source_code: String(a.source_code || ""),
+          suite: "DBMS",
+          database: a.database || "sqlite",
+          test_cases: [
+            {
+              id: 1,
+              schema_sql: String(a.schema_sql || ""),
+              stdin: String(a.stdin || ""),
+              expected_output: a.expected_output ? String(a.expected_output) : undefined,
+            },
+          ],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_fileio_eval": {
+        const a = (args || {}) as any;
+        const inName = String(a.input_filename || "input.txt");
+        const inContent = String(a.input_content || "DATA");
+        const outName = String(a.output_filename || "output.txt");
+        const payload = {
+          language_id: Number(a.language_id || 204),
+          source_code: String(a.source_code || ""),
+          suite: "FileIO",
+          test_cases: [
+            {
+              id: 1,
+              files: { [inName]: inContent },
+              output_file: outName,
+              expected_output: a.expected_output ? String(a.expected_output) : undefined,
+            },
+          ],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "eschaton_special_judge": {
+        const a = (args || {}) as any;
+        const payload = {
+          language_id: Number(a.language_id || 202),
+          source_code: String(a.source_code || ""),
+          suite: "SpecialJudge",
+          checker_code: String(a.checker_code || ""),
+          checker_language_id: Number(a.checker_language_id || 202),
+          test_cases: [
+            {
+              id: 1,
+              stdin: String(a.stdin || "5.0"),
+              expected_output: String(a.expected_output || "2.5"),
+            },
+          ],
+        };
+        const res = await callEschatonApi("/v1/execute", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
