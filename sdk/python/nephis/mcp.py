@@ -476,7 +476,7 @@ TOOLS = [
     # -------------------------------------------------------------
     {
         "name": "nephis_ci_accelerator",
-        "description": "Avenue 1 (v2.0): High-speed AST delta syntax slicing (pruning 80% tests in 1.4µs), Kronos flaky race quarantine, and sub-4ms COW microVM testbed restore.",
+        "description": "Avenue 1 (v2.0): High-speed AST delta syntax slicing (pruning 80% tests in 1.4µs), Nephis Deterministic Engine flaky race quarantine, and sub-4ms COW microVM testbed restore.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -511,7 +511,7 @@ TOOLS = [
     },
     {
         "name": "nephis_microvm_runner",
-        "description": "Avenue 4 (v2.0): Serverless MicroVM Runner with SABRE warm-pool superpage restore (6.5ms / 9.6 GB/s), µSlice sub-core pacing (14.5M checks/s), and NVMe direct-I/O.",
+        "description": "Avenue 4 (v2.0): Serverless MicroVM Runner with Thanaton warm-pool superpage restore (6.5ms / 9.6 GB/s), µSlice sub-core pacing (14.5M checks/s), and NVMe direct-I/O.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -544,7 +544,7 @@ TOOLS = [
     },
     {
         "name": "nephis_frontier_ktls_sockmap",
-        "description": "Frontier P0 (NSDI '25): Acheron In-Kernel kTLS + eBPF SockMap Splicing. Sub-microsecond live TLS connection handover with zero dropped packets.",
+        "description": "Frontier P0 (NSDI '25): Thanaton High-Throughput Network Splicing. Sub-microsecond live TLS connection handover with zero dropped packets.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -567,7 +567,7 @@ TOOLS = [
     },
     {
         "name": "nephis_frontier_rdt_cache",
-        "description": "Frontier P1 (EuroSys '25 Cachier): Hyperion NUMA-Aware Intel RDT / ARM MPAM L3 Cache Way Partitioning (<0.2ms max stall).",
+        "description": "Frontier P1 (EuroSys '25 Cachier): Thanaton NUMA-Aware Intel RDT / ARM MPAM L3 Cache Way Partitioning (<0.2ms max stall).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -578,7 +578,7 @@ TOOLS = [
     },
     {
         "name": "nephis_frontier_nvme_pushdown",
-        "description": "Frontier P2 (SIGMOD '25 PushdownStorage): Lethe In-Storage eBPF Predicate Pushdown via io_uring_cmd (>25 GB/s throughput).",
+        "description": "Frontier P2 (SIGMOD '25 PushdownStorage): Mnemon In-Storage eBPF Predicate Pushdown via io_uring_cmd (>25 GB/s throughput).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -590,7 +590,7 @@ TOOLS = [
     },
     {
         "name": "nephis_frontier_specfuzz_synthesize",
-        "description": "Frontier P2 (OSDI '24 SpecFuzz): Aletheia Evolutionary Micro-Fuzzer with 64KB AFL Bitmap (100,000 vectors in <12ms).",
+        "description": "Frontier P2 (OSDI '24 SpecFuzz): Eschaton Evolutionary Micro-Fuzzer with 64KB AFL Bitmap (100,000 vectors in <12ms).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -600,11 +600,11 @@ TOOLS = [
     },
     {
         "name": "nephis_frontier_vdso_schedule",
-        "description": "Frontier P3 (OSDI '24 Hermit): Kronos VDSO Unmapping & Concurrency Thread Permuter (100% deterministic race reproduction).",
+        "description": "Frontier P3 (OSDI '24 Hermit): Nephis Deterministic Engine VDSO Unmapping & Concurrency Thread Permuter (100% deterministic race reproduction).",
         "inputSchema": {
             "type": "object",
             "properties": {
-                "sandbox_id": {"type": "string", "default": "sbx-kronos-01"},
+                "sandbox_id": {"type": "string", "default": "sbx-Nephis Deterministic Engine-01"},
                 "seed": {"type": "integer", "default": 9876543210},
                 "thread_count": {"type": "integer", "default": 8}
             }
@@ -708,10 +708,10 @@ TOOLS = [
             "properties": {}
         }
     },
-    # 2026 Sovereign & Kronos Multiverse Fabric
+    # 2026 Sovereign & Nephis Deterministic Engine Multiverse Fabric
     {
         "name": "nephis_multiverse_fork",
-        "description": "Kronos Titan 7: Spawns parallel multiverse timelines under deterministic PRNG seeds and graynet network fault perturbations (asymmetric drop, ack stall, half-duplex, sliding latency). Evaluates consensus split-brain risks.",
+        "description": "Nephis Deterministic Engine Titan 7: Spawns parallel multiverse timelines under deterministic PRNG seeds and graynet network fault perturbations (asymmetric drop, ack stall, half-duplex, sliding latency). Evaluates consensus split-brain risks.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -1553,7 +1553,7 @@ def handle_request(req):
 
             elif tool_name == "nephis_frontier_vdso_schedule":
                 res = client.vdso_deterministic_schedule(
-                    sandbox_id=args.get("sandbox_id", "sbx-kronos-01"),
+                    sandbox_id=args.get("sandbox_id", "sbx-Nephis Deterministic Engine-01"),
                     seed=args.get("seed", 9876543210),
                     thread_count=args.get("thread_count", 8)
                 )
@@ -1723,7 +1723,7 @@ def handle_request(req):
 
             elif tool_name in ("nephis_verify_research_papers", "nephis_research_verify"):
                 papers = [
-                    "01. Jiagu (ATC '24) - Pre-decision scheduling [PASS]",
+                    "01. Eschaton Pre-decision scheduling [PASS]",
                     "02. PeeR (OSDI '26) - Preemptible eBPF [PASS]",
                     "03. µslice (ACM '26) - Sub-core CPU pacing [PASS]",
                     "04. I/O Passthru (FAST '24) - io_uring_cmd NVMe [PASS]",

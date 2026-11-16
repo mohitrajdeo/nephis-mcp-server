@@ -35,7 +35,7 @@ GENERAL_MAN = f"""{colorize("MNEMON(1)", BOLD)}                       {colorize(
     {colorize("Mnemon", BOLD)} provides dedicated PostgreSQL 16 sovereign cluster instances,
     instant 31ms zero-copy database branching via Linux XFS FICLONE block reflinks,
     Point-in-Time Recovery (PITR) WAL rewinds, pgvector HNSW-PQ vector quantization,
-    Lethe Real-time Change Data Capture (CDC) streaming, 3-way schema reconciliation,
+    Mnemon Real-time Change Data Capture (CDC) streaming, 3-way schema reconciliation,
     and automated database migration from Neon/Supabase.
 
 {colorize("CORE WORKFLOW FOR AI AGENTS", BOLD)}
@@ -57,7 +57,7 @@ GENERAL_MAN = f"""{colorize("MNEMON(1)", BOLD)}                       {colorize(
     {colorize("pitr", GREEN)}         Point-In-Time Recovery via continuous WAL archiving & timelines
     {colorize("scale", GREEN)}        Configure Aurora Serverless v2 ACU capacity scaling & stasis
     {colorize("pooler", GREEN)}       Inspect or dynamically tune PgBouncer connection pooler
-    {colorize("cdc", GREEN)}          Lethe Real-time Change Data Capture (CDC) streaming and inspection
+    {colorize("cdc", GREEN)}          Mnemon Real-time Change Data Capture (CDC) streaming and inspection
     {colorize("diff", GREEN)}         Show structural schema DDL diff between branch and parent
     {colorize("reset", GREEN)}        One-click branch rollback / reset to parent state
     {colorize("search", GREEN)}       ParadeDB BM25 / tsvector hybrid full-text search
@@ -398,7 +398,7 @@ COMMAND_MANS = {
     "cdc": f"""{colorize("MNEMON-CDC(1)", BOLD)}                 {colorize("User Manual", DIM)}                {colorize("MNEMON-CDC(1)", BOLD)}
 
 {colorize("NAME", BOLD)}
-    mnemon-cdc - Lethe Real-time Change Data Capture (CDC) streaming and inspection
+    mnemon-cdc - Mnemon Real-time Change Data Capture (CDC) streaming and inspection
 
 {colorize("SYNOPSIS", BOLD)}
     {colorize("mnemon cdc stream", GREEN)} {colorize("PROJECT_ID", YELLOW)} [{colorize("--table", CYAN)} {colorize("TABLE", YELLOW)}] [{colorize("--action", CYAN)} {colorize("ACTION", YELLOW)}]

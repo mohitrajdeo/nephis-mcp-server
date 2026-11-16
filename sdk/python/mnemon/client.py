@@ -47,7 +47,7 @@ class MnemonClient:
     Supports:
       - 31ms Zero-Copy XFS Reflink Branching
       - One-Click Schema Diff & Branch Reset (<50ms)
-      - Continuous Point-in-Time Recovery (PITR) via Lethe WAL Replay
+      - Continuous Point-in-Time Recovery (PITR) via Mnemon WAL Replay
       - ParadeDB BM25 & PostgreSQL tsvector Full-Text Search
       - Managed PostgREST RESTful Data API Engine (/rest/v1/...)
       - Branching S3-Compatible Copy-on-Write Object Storage (/storage/v1/...)
@@ -172,7 +172,7 @@ class MnemonClient:
     def time_travel(
         self, tenant_id: str, new_branch: str, target_time: str, parent_branch: str = "main"
     ) -> Dict[str, Any]:
-        """Continuous Point-in-Time Recovery: spawn a new branch from a historical timestamp via Lethe WAL replay."""
+        """Continuous Point-in-Time Recovery: spawn a new branch from a historical timestamp via Mnemon WAL replay."""
         payload = {
             "tenant_id": tenant_id,
             "new_branch": new_branch,
@@ -434,7 +434,7 @@ class MnemonClient:
         return resp.json()
 
     def get_cdc_stats(self, tenant_id: str) -> Dict[str, Any]:
-        """Fetch live Lethe CDC buffer and throughput performance statistics."""
+        """Fetch live Mnemon CDC buffer and throughput performance statistics."""
         resp = requests.get(
             f"{self.api_url}/v1/projects/{tenant_id}/cdc/stats",
             headers=self._headers(),
@@ -452,7 +452,7 @@ class MnemonClient:
         record: Dict[str, Any],
         old_record: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Publish a database row mutation directly to Lethe CDC stream."""
+        """Publish a database row mutation directly to Mnemon CDC stream."""
         payload = {
             "table": table,
             "action": action.upper(),

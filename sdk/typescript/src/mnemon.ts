@@ -4,7 +4,7 @@
  * Provides native bindings for:
  *  - 31ms Zero-Copy XFS Reflink Branching
  *  - One-Click Schema Diff & Branch Reset (<50ms)
- *  - Continuous Point-in-Time Recovery (PITR) via Lethe WAL Replay
+ *  - Continuous Point-in-Time Recovery (PITR) via Mnemon WAL Replay
  *  - ParadeDB BM25 & PostgreSQL tsvector Full-Text Search
  *  - Managed PostgREST RESTful Data API Engine (/rest/v1/...)
  *  - Branching S3-Compatible Copy-on-Write Object Storage (/storage/v1/...)

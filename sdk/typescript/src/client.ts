@@ -432,7 +432,7 @@ export class ThanatonClient {
     }
 
     if (Object.keys(state).length > 0) {
-      const lines = ["# Re-hydrated Tier 0 State from Aletheia/Eschaton Session"];
+      const lines = ["# Re-hydrated Tier 0 State from Eschaton Session"];
       for (const [k, v] of Object.entries(state)) {
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(k)) continue;
         let val = v;
@@ -578,7 +578,7 @@ export class ThanatonClient {
   }
 
   /**
-   * Kronos Titan 7: Spawns parallel multiverse timelines under deterministic PRNG seeds
+   * Nephis Deterministic Engine Titan 7: Spawns parallel multiverse timelines under deterministic PRNG seeds
    * and network chaos scenarios (asymmetric drop, ack stall, split brain).
    */
   async forkMultiverse(options: {

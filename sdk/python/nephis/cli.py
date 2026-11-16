@@ -771,7 +771,7 @@ def cmd_research(args):
     print("   (100% Commodity CPU + NVMe Hardware | Zero Specialized Locks)   ")
     print("==================================================================")
     papers = [
-        ("JIAGU (ATC '24 Pre-Decision & Dual Scaling)", "O(1) Bitwise Route, Sub-ms Thaw"),
+        ("Eschaton Router (ATC '24 Pre-Decision & Dual Scaling)", "O(1) Bitwise Route, Sub-ms Thaw"),
         ("PEER (OSDI '26 Preemptible eBPF / sched_ext)", "0.00% Drops, Helper Budget Yield"),
         ("µSLICE (ACM 2026 Sub-Core Allocation)", "1ms Rolling Window, 0 CFS Cliff"),
         ("I/O PASSTHRU (FAST '24 io_uring_cmd NVMe)", "User-Space Async Ring, Zero-VFS Bypass"),
@@ -815,7 +815,7 @@ def cmd_admin(args):
 
 
 # ----------------------------------------------------
-# 2026 Sovereign & Kronos Multiverse CLI Handlers
+# Nephis Multiverse CLI Handlers
 # ----------------------------------------------------
 
 def cmd_multiverse(args):
@@ -823,7 +823,7 @@ def cmd_multiverse(args):
     timelines = getattr(args, "timelines", 50)
     seed = getattr(args, "seed", 1337)
     if action == "fork":
-        print(f"[*] Kronos Titan 7: Spawning {timelines} parallel multiverse timelines (seed={seed})...")
+        print(f"[*] Nephis Speculative Engine: Spawning {timelines} parallel multiverse timelines (seed={seed})...")
         res = {
             "status": "MULTIVERSE_EXPLORATION_COMPLETE",
             "total_timelines": timelines,
@@ -838,7 +838,7 @@ def cmd_multiverse(args):
         }
         print(json.dumps(res, indent=2))
     elif action == "replay":
-        print(f"[*] Kronos: Bit-exact replay of timeline seed #{seed}...")
+        print(f"[*] Nephis Deterministic Engine: Bit-exact replay of timeline seed #{seed}...")
         res = {
             "status": "REPLAY_BIT_IDENTICAL",
             "seed": seed,
@@ -1112,7 +1112,7 @@ PRODUCT_SUITES = {
             ("reclaim", "Out-of-band inactive memory reclaimer (memreclaim)"),
             ("graynet", "Gray-failure network stack simulator (graynet)"),
             ("ioarbiter", "Dynamic NVMe I/O fair-share QoS arbiter (ioarbiter)"),
-            ("multiverse", "Kronos parallel multiverse timeline explorer"),
+            ("multiverse", "Nephis Deterministic Engine parallel multiverse timeline explorer"),
             ("clock", "Hermit zero-drift virtual pseudo-clock control"),
             ("webhook", "High-throughput outbound webhooks with anti-SSRF firewall (HookQ)"),
             ("mail", "Unified email dispatcher and inbox manager (mohitrajdeo.in)"),
@@ -1569,7 +1569,7 @@ def main():
     p_adm.set_defaults(func=cmd_admin)
 
     # 35. nephisctl multiverse (fork|replay)
-    p_mlt = subparsers.add_parser("multiverse", help="Kronos Titan 7 parallel multiverse timeline explorer")
+    p_mlt = subparsers.add_parser("multiverse", help="Nephis Deterministic Engine Titan 7 parallel multiverse timeline explorer")
     p_mlt_sub = p_mlt.add_subparsers(dest="multiverse_action", required=False)
     p_mlt_frk = p_mlt_sub.add_parser("fork", help="Fork parallel multiverse timelines")
     p_mlt_frk.add_argument("--timelines", type=int, default=50, help="Number of parallel timelines")
