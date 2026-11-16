@@ -11,13 +11,6 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import {
-  LicenseToken,
-  LicenseAuthority,
-  TIERS,
-  LicenseError,
-  type AnankeTier,
-} from "./license.js";
 import { execSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as os from "node:os";
@@ -105,6 +98,35 @@ function solveHashcash(nonce: string, machineSig: string, difficulty: number = 4
   throw new Error("Failed to solve Proof-of-Work challenge within bounds");
 }
 
+function resolveDeveloperIdentity(): { name: string; email: string } {
+  let name = process.env.NEPHIS_NAME || process.env.NEPHIS_DEVELOPER_NAME || process.env.CIEL_NAME || "";
+  let email = process.env.NEPHIS_EMAIL || process.env.NEPHIS_DEVELOPER_EMAIL || process.env.CIEL_EMAIL || "";
+
+  name = name.trim();
+  email = email.trim();
+
+  if (!name || !email) {
+    try {
+      const { execSync } = require("child_process");
+      if (!name) {
+        name = execSync("git config user.name", { stdio: ["ignore", "pipe", "ignore"], encoding: "utf-8" }).trim();
+      }
+      if (!email) {
+        email = execSync("git config user.email", { stdio: ["ignore", "pipe", "ignore"], encoding: "utf-8" }).trim();
+      }
+    } catch {}
+  }
+
+  if (!name) name = os.hostname() || "Nephis Agent";
+  if (!email) {
+    throw new Error(
+      "Nephis API key claim requires a contact email and name so credentials and alerts can be delivered. " +
+      "Please set NEPHIS_EMAIL and NEPHIS_NAME environment variables or configure 'git config user.email' / 'git config user.name'."
+    );
+  }
+  return { name, email };
+}
+
 async function bootstrapAgentKey(): Promise<string> {
   const chRes = await fetch(`${NEPHIS_BASE_URL}/v1/auth/challenge`, {
     headers: { "User-Agent": USER_AGENT, Accept: "application/json" },
@@ -117,6 +139,7 @@ async function bootstrapAgentKey(): Promise<string> {
   const difficulty = chData.difficulty || 4;
   const sig = computeHardwareSignature();
   const sol = solveHashcash(nonce, sig, difficulty);
+  const { name, email } = resolveDeveloperIdentity();
 
   const claimRes = await fetch(`${NEPHIS_BASE_URL}/v1/auth/claim-agent-key`, {
     method: "POST",
@@ -129,7 +152,9 @@ async function bootstrapAgentKey(): Promise<string> {
       challenge_nonce: nonce,
       solution_nonce: sol,
       machine_signature: sig,
-      client_version: "1.0.0",
+      client_version: "1.0.4",
+      name,
+      email,
     }),
   });
 
@@ -571,141 +596,6 @@ const TOOLS: Tool[] = [
     },
   },
 
-  // --- Ananke License Authority & Monetization ---
-  {
-    name: "ananke_license_check",
-    description: "Check active tenant license tier, entitlements, and quota limits.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        token: { type: "string", description: "Optional license token to inspect" },
-      },
-    },
-  },
-  {
-    name: "ananke_license_generate",
-    description: "Generate a cryptographically signed Ananke commercial license token.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        tenant_id: { type: "string", description: "Target tenant identifier" },
-        tier: { type: "string", enum: ["community", "pro", "enterprise"], default: "pro" },
-        days: { type: "number", default: 365 },
-      },
-      required: ["tenant_id"],
-    },
-  },
-
-  // --- Ananke Series Deterministic Infrastructure Tools ---
-  {
-    name: "ananke_cdc_inspect",
-    description: "Inspect schema, row count, and records of a Walquet PostgreSQL CDC Parquet file.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        file_path: { type: "string", description: "Absolute path to .parquet file" },
-      },
-      required: ["file_path"],
-    },
-  },
-  {
-    name: "ananke_webhook_dispatch",
-    description: "Dispatch an outbound webhook with anti-SSRF firewall validation and HMAC-SHA256 signature.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        url: { type: "string", description: "Destination webhook URL" },
-        payload: { type: "string", description: "JSON payload string" },
-        secret: { type: "string", default: "webhook_secret" },
-      },
-      required: ["url", "payload"],
-    },
-  },
-  {
-    name: "ananke_finops_scan",
-    description: "Scan AWS cloud infrastructure for orphaned EBS volumes, idle NATs, and unattached EIPs.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        regions: { type: "string", default: "us-east-1", description: "Comma-separated target AWS regions to audit" },
-      },
-    },
-  },
-  {
-    name: "ananke_flight_record_inspect",
-    description: "Inspect a Tombstone pre-OOM crash autopsy file.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        file_path: { type: "string", description: "Path to tombstone autopsy JSON" },
-      },
-      required: ["file_path"],
-    },
-  },
-  {
-    name: "ananke_chaos_simulate",
-    description: "Run a deterministic discrete pseudo-time chaos simulation with Raft consensus.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        seed: { type: "number", default: 1337, description: "Random seed for reproducible chaos schedule" },
-        drop_rate: { type: "number", default: 0.15, description: "Network packet drop probability (0.0 - 1.0)" },
-        dup_rate: { type: "number", default: 0.05, description: "Packet duplication probability (0.0 - 1.0)" },
-        steps: { type: "number", default: 30, description: "Number of discrete state machine simulation steps" },
-      },
-    },
-  },
-  {
-    name: "ananke_pool_probe",
-    description: "Probe host kernel eBPF sockmap, BPF JIT, and client-side database pooling capabilities.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "ananke_storage_pipe_bench",
-    description: "Benchmark zero-copy S3 streaming pipe throughput and memory bounds.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        size_mb: { type: "number", default: 20, description: "Synthetic test payload size in megabytes" },
-        part_size_mb: { type: "number", default: 5, description: "Multipart chunk size in megabytes" },
-      },
-    },
-  },
-  {
-    name: "ananke_rootfs_build_manifest",
-    description: "Build chunked block streaming manifest from a container image or rootfs file.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        source_path: { type: "string", description: "Source rootfs image path" },
-        output_path: { type: "string", default: "manifest.json", description: "Destination path for generated JSON manifest" },
-      },
-      required: ["source_path"],
-    },
-  },
-  {
-    name: "ananke_dns_probe",
-    description: "Inspect host eBPF XDP network frame interception and driver capabilities.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    },
-  },
-  {
-    name: "ananke_socket_migrate_demo",
-    description: "Execute active live TCP socket migration demonstration preserving sequence state.",
-    inputSchema: {
-      type: "object",
-      properties: {},
-      additionalProperties: false,
-    },
-  },
-
   // --- Mnemon-DB Serverless PostgreSQL Tools for AI Coding Agents ---
   {
     name: "mnemon_list_tenants",
@@ -844,7 +734,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "mnemon_time_travel",
-    description: "Read database branch state at a specific historical point in time (timestamp or LSN) via Lethe continuous WAL replay.",
+    description: "Read database branch state at a specific historical point in time (timestamp or LSN) via PostgreSQL continuous WAL replay.",
     inputSchema: {
       type: "object",
       properties: {
@@ -941,7 +831,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "mnemon_cdc_stats",
-    description: "Inspect Lethe real-time Change Data Capture (CDC) streaming stats, buffer saturation, and subscriber lag.",
+    description: "Inspect PostgreSQL real-time Change Data Capture (CDC) streaming stats, buffer saturation, and subscriber lag.",
     inputSchema: {
       type: "object",
       properties: {
@@ -952,7 +842,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "mnemon_cdc_publish",
-    description: "Publish or inject a transactional mutation event into the Lethe real-time CDC event stream.",
+    description: "Publish or inject a transactional mutation event into the PostgreSQL real-time CDC event stream.",
     inputSchema: {
       type: "object",
       properties: {
@@ -2458,341 +2348,6 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         }
-      }      // --- Ananke License Authority & Monetization Handlers ---
-      case "ananke_license_check": {
-        const token = (args?.token as string) || (typeof process !== "undefined" ? process.env?.ANANKE_LICENSE_KEY : undefined);
-        const auth = new LicenseAuthority(token);
-        return {
-          content: [{ type: "text", text: JSON.stringify(auth.status(), null, 2) }],
-        };
-      }
-
-      case "ananke_license_generate": {
-        const tenantId = String(args?.tenant_id || "default");
-        const tier = (args?.tier as AnankeTier) || "pro";
-        const days = Number(args?.days) || 365;
-        const token = LicenseToken.generate({ tenantId, tier, expiresInDays: days });
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  token,
-                  tenant_id: tenantId,
-                  tier: tier.toUpperCase(),
-                  expires_in_days: days,
-                  status: "ACTIVE_COMMERCIAL_LICENSE",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      // --- Ananke Deterministic Engine Handlers ---
-      case "ananke_cdc_inspect": {
-        const filePath = String(args?.file_path || "walquet_cdc_sample.parquet");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "walquet",
-                  file: filePath,
-                  format: "Apache Parquet v2",
-                  compression: "SNAPPY",
-                  total_rows: 50000,
-                  columns: ["wal_lsn", "table_name", "operation", "primary_key", "payload_json", "commit_timestamp"],
-                  throughput_rec_sec: 324485.2,
-                  jvm_free: true,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "ananke_webhook_dispatch": {
-        const url = String(args?.url || "");
-        const payload = String(args?.payload || "{}");
-        const forbidden = ["127.0.0.1", "localhost", "169.254.169.254", "0.0.0.0"];
-        for (const bad of forbidden) {
-          if (url.includes(bad)) {
-            return {
-              content: [{ type: "text", text: `SSRF Blocked: target ${url} points to internal address.` }],
-              isError: true,
-            };
-          }
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "hookq",
-                  status: "delivered",
-                  url,
-                  payload_bytes: payload.length,
-                  signature: "sha256=9b736b7617b4478146de2f518e3c15d488ab89a94154948a",
-                  duration_ms: 1.45,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "ananke_finops_scan": {
-        const token = (typeof process !== "undefined" ? process.env?.ANANKE_LICENSE_KEY : undefined);
-        const auth = new LicenseAuthority(token);
-        const regions = String(args?.regions || "us-east-1").split(",");
-        if (regions.length > 1) {
-          try {
-            auth.assertFeature("finops");
-          } catch (err: any) {
-            return {
-              content: [{
-                type: "text",
-                text: JSON.stringify({
-                  error: "LICENSE_UPGRADE_REQUIRED",
-                  message: err.message,
-                  tier: auth.tier.toUpperCase(),
-                  upgrade_url: "https://ananke.run/pricing",
-                }, null, 2),
-              }],
-              isError: true,
-            };
-          }
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "zombieprune",
-                  regions_scanned: regions,
-                  orphans_found: [
-                    { type: "unattached_ebs", volume_id: "vol-0a1b2c3d4e5f6001", cost_monthly: 40.0 },
-                    { type: "idle_eip", public_ip: "54.210.88.99", cost_monthly: 3.6 },
-                    { type: "idle_nat_gateway", nat_id: "nat-08a7b6c5d4e3f2001", cost_monthly: 95.0 },
-                  ],
-                  total_monthly_waste_usd: 138.6,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "ananke_flight_record_inspect": {
-        const filePath = String(args?.file_path || "/var/log/tombstone/autopsy.json");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "tombstone",
-                  file: filePath,
-                  cgroup: "/sys/fs/cgroup/ananke-workload",
-                  trigger_event: "memory.high_breach",
-                  threshold_mb: 64,
-                  peak_rss_mb: 51.3,
-                  oom_kill_prevented: true,
-                  top_allocators: ["bufio.NewWriterSize", "runtime.malg", "crypto/tls.Conn"],
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "ananke_chaos_simulate": {
-        const token = (typeof process !== "undefined" ? process.env?.ANANKE_LICENSE_KEY : undefined);
-        const auth = new LicenseAuthority(token);
-        try {
-          auth.assertFeature("chaos");
-        } catch (err: any) {
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                error: "LICENSE_UPGRADE_REQUIRED",
-                message: err.message,
-                tier: auth.tier.toUpperCase(),
-                upgrade_url: "https://ananke.run/pricing",
-              }, null, 2),
-            }],
-            isError: true,
-          };
-        }
-        const seed = Number(args?.seed) || 1337;
-        const steps = Number(args?.steps) || 30;
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "chronofault",
-                  seed,
-                  steps_simulated: steps,
-                  nodes: 5,
-                  invariants_held: true,
-                  split_brain_detected: false,
-                  reproducibility_hash: "0x7f9a1b8c2d3e4f5a",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "ananke_pool_probe": {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "sockpool",
-                  bpf_jit_enabled: true,
-                  sockmap_supported: true,
-                  max_multiplex_ratio: "100:10",
-                  benchmark_qps: 18748.5,
-                  status: "READY",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "ananke_storage_pipe_bench": {
-        const sizeMb = Number(args?.size_mb) || 20;
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "s3pipe",
-                  size_mb: sizeMb,
-                  upload_mb_sec: 360.35,
-                  download_mb_sec: 1668.18,
-                  zero_copy_vmsplice: true,
-                  sha256_match: true,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "ananke_rootfs_build_manifest": {
-        const sourcePath = String(args?.source_path || "rootfs.ext4");
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "nbdstream",
-                  source: sourcePath,
-                  chunk_size_kb: 512,
-                  total_chunks: 8192,
-                  hash_algorithm: "SHA-256",
-                  lazy_boot_ready: true,
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "ananke_dns_probe": {
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "xdpdns",
-                  xdp_driver_support: true,
-                  native_af_xdp: true,
-                  submicrosecond_latency_us: 7.46,
-                  measured_qps: 202882,
-                  status: "READY",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
-
-      case "ananke_socket_migrate_demo": {
-        const token = (typeof process !== "undefined" ? process.env?.ANANKE_LICENSE_KEY : undefined);
-        const auth = new LicenseAuthority(token);
-        try {
-          auth.assertFeature("live_migration");
-        } catch (err: any) {
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                error: "LICENSE_UPGRADE_REQUIRED",
-                message: err.message,
-                tier: auth.tier.toUpperCase(),
-                upgrade_url: "https://ananke.run/pricing",
-              }, null, 2),
-            }],
-            isError: true,
-          };
-        }
-        return {
-          content: [
-            {
-              type: "text",
-              text: JSON.stringify(
-                {
-                  engine: "sockmig",
-                  states_migrated: 1000,
-                  throughput_states_sec: 366305.8,
-                  tcp_repair_active: true,
-                  dropped_packets: 0,
-                  downtime_ms: 0.0,
-                  status: "SUCCESS",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
       }
 
       // --- Mnemon-DB Serverless PostgreSQL Tools ---
@@ -3077,11 +2632,11 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             const tableName = match ? match[1] : "ai_audit";
             const table = branch?.tables.get(tableName);
             const insertedRows = [
-              { id: 1, agent_name: "ananke-agent-1" },
-              { id: 2, agent_name: "ananke-agent-2" },
-              { id: 3, agent_name: "ananke-agent-3" },
-              { id: 4, agent_name: "ananke-agent-4" },
-              { id: 5, agent_name: "ananke-agent-5" },
+              { id: 1, agent_name: "nephis-agent-1" },
+              { id: 2, agent_name: "nephis-agent-2" },
+              { id: 3, agent_name: "nephis-agent-3" },
+              { id: 4, agent_name: "nephis-agent-4" },
+              { id: 5, agent_name: "nephis-agent-5" },
             ];
             if (table) {
               table.rows.push(...insertedRows);
@@ -3648,7 +3203,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 infinite_loop_risk: hasInfiniteLoop,
                 fork_bomb_risk: hasForkBomb,
                 preflight_duration_us: 12,
-                rejection_reason: hasInfiniteLoop ? "Aletheia AST Preflight Interception: Infinite loop hazard detected (while True: pass)" : undefined,
+                rejection_reason: hasInfiniteLoop ? "Eschaton AST Preflight Interception: Infinite loop hazard detected (while True: pass)" : undefined,
                 mode: "ALETHEIA_AST_IN_MEMORY_PREFLIGHT",
                 simulation: true,
                 notice: apiErr.message,

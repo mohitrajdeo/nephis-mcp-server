@@ -1,6 +1,6 @@
 # NEPHIS Model Context Protocol (MCP) Server (`nephis-mcp-server`)
 
-> **The Sovereign MCP Control Plane for Autonomous AI Coding Agents.**  
+> **The Unified MCP Control Plane for Autonomous AI Coding Agents.**  
 > Provides sub-6ms hardware KVM microVM sandboxes, 30ms zero-copy PostgreSQL branching, in-memory AST compiler pipelines, and kernel infrastructure to LLMs (Claude Desktop, Cursor, Windsurf, Devin, Antigravity).
 
 [![MCP Protocol](https://img.shields.io/badge/MCP-Protocol%202024--11--05-purple.svg)](https://modelcontextprotocol.io/)
@@ -29,11 +29,11 @@ When an autonomous AI agent launches `nephis-mcp-server` without an explicit `NE
 3. Credentials are saved locally to `~/.nephis/credentials.json` with automatic session renewal.
 4. **Zero human logins, zero credit cards, zero browser popups required.** Human developers can also claim their session with 1-click GitHub OAuth on [nephis.theeducode.com](https://nephis.theeducode.com) to upgrade to 2,000 monthly credits.
 
-The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants directly to bare-metal compute and database substrates across 4 sovereign pillars:
+The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants directly to bare-metal compute and database substrates across 4 core pillars:
 1. **THANATON (33 Tools):** Hardware KVM microVM sandboxes, sub-6ms boot, scale-to-zero stasis ($0 idle RAM), PTY terminals, Layer 4 port forwards, project deployments, custom domains, crons, webhooks, and SIEM drains.
 2. **MNEMON-DB (14 Tools):** 30ms zero-copy PostgreSQL 16 branching (XFS CoW reflinks), embedded vector search, schema diffing, and WAL rewind.
 3. **ESCHATON & NEPHIS (4 Tools):** Sub-38ms parallel online code judging, in-memory AST hazard detection (<50µs), 50-testcase fast-batch execution, and tenant whoami introspection.
-4. **ANANKE SYSTEMS (12 Tools):** Kernel infrastructure, eBPF connection pooling, zero-copy S3 streaming pipes, tombstone crash autopsy, and live socket migration.
+4. **KERNEL INFRASTRUCTURE (12 Tools):** Kernel systems, eBPF connection pooling, zero-copy S3 streaming pipes, tombstone crash autopsy, and live socket migration.
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -42,7 +42,7 @@ The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants directl
                             │ JSON-RPC 2.0 (stdio / SSE)
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│ NEPHIS Unified MCP Server (63 Sovereign Tools)         │
+│ NEPHIS Unified MCP Server (63 Production Tools)        │
 └───────┬───────────────────┬───────────────────┬────────┘
         │                   │                   │
         ▼                   ▼                   ▼
@@ -1847,4 +1847,4 @@ console.log('Branch Ready:', branch.connection_string);
 * **GitHub:** [https://github.com/mohitrajdeo](https://github.com/mohitrajdeo)
 * **LinkedIn:** [https://www.linkedin.com/in/mohitrajdeo/](https://www.linkedin.com/in/mohitrajdeo/)
 * **Contact:** [mohit@mohitrajdeo.in](mailto:mohit@mohitrajdeo.in)
-* **Organization:** NEPHIS
+* **Organization:** NEPHIS / Eduniketan Private Limited
