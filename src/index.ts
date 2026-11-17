@@ -49,7 +49,7 @@ function loadStoredCredentials(): any {
     try {
       const data = JSON.parse(fs.readFileSync(credPath, "utf-8"));
       if (data && data.api_key) return data;
-    } catch {}
+    } catch { }
   }
   return null;
 }
@@ -66,7 +66,7 @@ function saveCredentials(data: any): void {
   try {
     fs.chmodSync(credPath, 0o600);
     fs.chmodSync(credDir, 0o700);
-  } catch {}
+  } catch { }
 }
 
 function computeHardwareSignature(): string {
@@ -114,7 +114,7 @@ function resolveDeveloperIdentity(): { name: string; email: string } {
       if (!email) {
         email = execSync("git config user.email", { stdio: ["ignore", "pipe", "ignore"], encoding: "utf-8" }).trim();
       }
-    } catch {}
+    } catch { }
   }
 
   if (!name) name = os.hostname() || "Nephis Agent";
@@ -1644,277 +1644,277 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             runnerCmd = `echo '${b64}' | base64 -d | bash`;
             break;
           case "thanaton_manage_domains": {
-        const a = (args || {}) as any;
-        const projectId = String(a.project_id || "");
-        const action = String(a.action || "list");
-        if (action === "list") {
-          const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}`);
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "add") {
-          const res = await callThanatonApi("/api/v1/projects/domains", {
-            method: "POST",
-            body: JSON.stringify({
-              project_id: projectId,
-              domain: a.domain,
-            }),
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "delete") {
-          const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}&domain=${encodeURIComponent(a.domain)}`, {
-            method: "DELETE",
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        }
-        throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
-      }
+            const a = (args || {}) as any;
+            const projectId = String(a.project_id || "");
+            const action = String(a.action || "list");
+            if (action === "list") {
+              const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}`);
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "add") {
+              const res = await callThanatonApi("/api/v1/projects/domains", {
+                method: "POST",
+                body: JSON.stringify({
+                  project_id: projectId,
+                  domain: a.domain,
+                }),
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "delete") {
+              const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}&domain=${encodeURIComponent(a.domain)}`, {
+                method: "DELETE",
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            }
+            throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
+          }
 
-      case "thanaton_manage_crons": {
-        const a = (args || {}) as any;
-        const projectId = String(a.project_id || "");
-        const action = String(a.action || "list");
-        if (action === "list") {
-          const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}`);
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "add") {
-          const res = await callThanatonApi("/api/v1/projects/crons", {
-            method: "POST",
-            body: JSON.stringify({
-              project_id: projectId,
-              path: a.path,
-              schedule: a.schedule,
-            }),
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "delete") {
-          const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}&cron_id=${encodeURIComponent(a.cron_id)}`, {
-            method: "DELETE",
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        }
-        throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
-      }
+          case "thanaton_manage_crons": {
+            const a = (args || {}) as any;
+            const projectId = String(a.project_id || "");
+            const action = String(a.action || "list");
+            if (action === "list") {
+              const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}`);
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "add") {
+              const res = await callThanatonApi("/api/v1/projects/crons", {
+                method: "POST",
+                body: JSON.stringify({
+                  project_id: projectId,
+                  path: a.path,
+                  schedule: a.schedule,
+                }),
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "delete") {
+              const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}&cron_id=${encodeURIComponent(a.cron_id)}`, {
+                method: "DELETE",
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            }
+            throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
+          }
 
-      case "thanaton_manage_deploy_hooks": {
-        const a = (args || {}) as any;
-        const projectId = String(a.project_id || "");
-        const action = String(a.action || "list");
-        if (action === "list") {
-          const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}`);
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "create") {
-          const res = await callThanatonApi("/api/v1/projects/deploy-hooks", {
-            method: "POST",
-            body: JSON.stringify({
-              project_id: projectId,
-              name: a.name,
-              branch: a.branch || "main",
-            }),
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "delete") {
-          const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}&hook_id=${encodeURIComponent(a.hook_id)}`, {
-            method: "DELETE",
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        }
-        throw new Error(`Unsupported action: ${action}. Expected list, create, or delete.`);
-      }
+          case "thanaton_manage_deploy_hooks": {
+            const a = (args || {}) as any;
+            const projectId = String(a.project_id || "");
+            const action = String(a.action || "list");
+            if (action === "list") {
+              const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}`);
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "create") {
+              const res = await callThanatonApi("/api/v1/projects/deploy-hooks", {
+                method: "POST",
+                body: JSON.stringify({
+                  project_id: projectId,
+                  name: a.name,
+                  branch: a.branch || "main",
+                }),
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "delete") {
+              const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}&hook_id=${encodeURIComponent(a.hook_id)}`, {
+                method: "DELETE",
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            }
+            throw new Error(`Unsupported action: ${action}. Expected list, create, or delete.`);
+          }
 
-      case "thanaton_manage_routes": {
-        const a = (args || {}) as any;
-        const projectId = String(a.project_id || "");
-        const action = String(a.action || "list");
-        if (action === "list") {
-          const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}`);
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "set") {
-          const res = await callThanatonApi("/api/v1/projects/routes", {
-            method: "POST",
-            body: JSON.stringify({
-              project_id: projectId,
-              source: a.source,
-              destination: a.destination,
-              type: a.type || "rewrite",
-              status: a.status ? Number(a.status) : undefined,
-              headers: a.headers,
-            }),
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "delete") {
-          const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}&route_id=${encodeURIComponent(a.route_id)}`, {
-            method: "DELETE",
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        }
-        throw new Error(`Unsupported action: ${action}. Expected list, set, or delete.`);
-      }
+          case "thanaton_manage_routes": {
+            const a = (args || {}) as any;
+            const projectId = String(a.project_id || "");
+            const action = String(a.action || "list");
+            if (action === "list") {
+              const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}`);
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "set") {
+              const res = await callThanatonApi("/api/v1/projects/routes", {
+                method: "POST",
+                body: JSON.stringify({
+                  project_id: projectId,
+                  source: a.source,
+                  destination: a.destination,
+                  type: a.type || "rewrite",
+                  status: a.status ? Number(a.status) : undefined,
+                  headers: a.headers,
+                }),
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "delete") {
+              const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}&route_id=${encodeURIComponent(a.route_id)}`, {
+                method: "DELETE",
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            }
+            throw new Error(`Unsupported action: ${action}. Expected list, set, or delete.`);
+          }
 
-      case "thanaton_manage_log_drains": {
-        const a = (args || {}) as any;
-        const projectId = String(a.project_id || "");
-        const action = String(a.action || "list");
-        if (action === "list") {
-          const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}`);
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "add") {
-          const res = await callThanatonApi("/api/v1/projects/log-drains", {
-            method: "POST",
-            body: JSON.stringify({
-              project_id: projectId,
-              name: a.name || "External SIEM Drain",
-              provider: a.provider || "webhook",
-              url: a.url,
-              batch_size: a.batch_size ? Number(a.batch_size) : 100,
-            }),
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } else if (action === "delete") {
-          const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}&drain_id=${encodeURIComponent(a.drain_id)}`, {
-            method: "DELETE",
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        }
-        throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
-      }
+          case "thanaton_manage_log_drains": {
+            const a = (args || {}) as any;
+            const projectId = String(a.project_id || "");
+            const action = String(a.action || "list");
+            if (action === "list") {
+              const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}`);
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "add") {
+              const res = await callThanatonApi("/api/v1/projects/log-drains", {
+                method: "POST",
+                body: JSON.stringify({
+                  project_id: projectId,
+                  name: a.name || "External SIEM Drain",
+                  provider: a.provider || "webhook",
+                  url: a.url,
+                  batch_size: a.batch_size ? Number(a.batch_size) : 100,
+                }),
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            } else if (action === "delete") {
+              const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}&drain_id=${encodeURIComponent(a.drain_id)}`, {
+                method: "DELETE",
+              });
+              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+            }
+            throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
+          }
 
-      case "thanaton_get_wallet": {
-        const res = await callThanatonApi("/api/v1/billing/wallet");
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
+          case "thanaton_get_wallet": {
+            const res = await callThanatonApi("/api/v1/billing/wallet");
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          }
 
-      case "thanaton_list_invoices": {
-        const a = (args || {}) as any;
-        const query = a.org_slug ? `?org_slug=${encodeURIComponent(a.org_slug)}` : "";
-        const res = await callThanatonApi(`/api/v1/billing/invoices${query}`);
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
+          case "thanaton_list_invoices": {
+            const a = (args || {}) as any;
+            const query = a.org_slug ? `?org_slug=${encodeURIComponent(a.org_slug)}` : "";
+            const res = await callThanatonApi(`/api/v1/billing/invoices${query}`);
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          }
 
-      case "nephis_whoami": {
-        const res = await callThanatonApi("/api/v1/auth/whoami");
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
+          case "nephis_whoami": {
+            const res = await callThanatonApi("/api/v1/auth/whoami");
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          }
 
-      case "eschaton_execute_suite": {
-        const a = (args || {}) as any;
-        const payload = {
-          language_id: Number(a.language_id || 202),
-          source_code: String(a.source_code || ""),
-          suite: a.suite || "Omni",
-          test_cases: a.test_cases || [{ id: 1, stdin: "", expected_output: "" }],
-          database: a.database,
-          checker_code: a.checker_code,
-          checker_language_id: a.checker_language_id ? Number(a.checker_language_id) : undefined,
-          verbose: a.verbose !== undefined ? Number(a.verbose) : undefined,
-        };
-        const res = await callEschatonApi("/v1/execute", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
+          case "eschaton_execute_suite": {
+            const a = (args || {}) as any;
+            const payload = {
+              language_id: Number(a.language_id || 202),
+              source_code: String(a.source_code || ""),
+              suite: a.suite || "Omni",
+              test_cases: a.test_cases || [{ id: 1, stdin: "", expected_output: "" }],
+              database: a.database,
+              checker_code: a.checker_code,
+              checker_language_id: a.checker_language_id ? Number(a.checker_language_id) : undefined,
+              verbose: a.verbose !== undefined ? Number(a.verbose) : undefined,
+            };
+            const res = await callEschatonApi("/v1/execute", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          }
 
-      case "eschaton_complexity_profile": {
-        const a = (args || {}) as any;
-        const payload = {
-          language_id: Number(a.language_id || 202),
-          source_code: String(a.source_code || ""),
-          suite: "Complexity",
-          test_cases: [{ id: 1, stdin: String(a.stdin || "100") }],
-        };
-        const res = await callEschatonApi("/v1/execute", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
+          case "eschaton_complexity_profile": {
+            const a = (args || {}) as any;
+            const payload = {
+              language_id: Number(a.language_id || 202),
+              source_code: String(a.source_code || ""),
+              suite: "Complexity",
+              test_cases: [{ id: 1, stdin: String(a.stdin || "100") }],
+            };
+            const res = await callEschatonApi("/v1/execute", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          }
 
-      case "eschaton_sanitize_check": {
-        const a = (args || {}) as any;
-        const payload = {
-          language_id: Number(a.language_id || 202),
-          source_code: String(a.source_code || ""),
-          suite: "Sanitizer",
-          test_cases: [{ id: 1, stdin: String(a.stdin || "") }],
-        };
-        const res = await callEschatonApi("/v1/execute", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
+          case "eschaton_sanitize_check": {
+            const a = (args || {}) as any;
+            const payload = {
+              language_id: Number(a.language_id || 202),
+              source_code: String(a.source_code || ""),
+              suite: "Sanitizer",
+              test_cases: [{ id: 1, stdin: String(a.stdin || "") }],
+            };
+            const res = await callEschatonApi("/v1/execute", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          }
 
-      case "eschaton_dbms_eval": {
-        const a = (args || {}) as any;
-        const payload = {
-          language_id: 204, // Python 3.11 for DBMS
-          source_code: String(a.source_code || ""),
-          suite: "DBMS",
-          database: a.database || "sqlite",
-          test_cases: [
-            {
-              id: 1,
-              schema_sql: String(a.schema_sql || ""),
-              stdin: String(a.stdin || ""),
-              expected_output: a.expected_output ? String(a.expected_output) : undefined,
-            },
-          ],
-        };
-        const res = await callEschatonApi("/v1/execute", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
+          case "eschaton_dbms_eval": {
+            const a = (args || {}) as any;
+            const payload = {
+              language_id: 204, // Python 3.11 for DBMS
+              source_code: String(a.source_code || ""),
+              suite: "DBMS",
+              database: a.database || "sqlite",
+              test_cases: [
+                {
+                  id: 1,
+                  schema_sql: String(a.schema_sql || ""),
+                  stdin: String(a.stdin || ""),
+                  expected_output: a.expected_output ? String(a.expected_output) : undefined,
+                },
+              ],
+            };
+            const res = await callEschatonApi("/v1/execute", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          }
 
-      case "eschaton_fileio_eval": {
-        const a = (args || {}) as any;
-        const inName = String(a.input_filename || "input.txt");
-        const inContent = String(a.input_content || "DATA");
-        const outName = String(a.output_filename || "output.txt");
-        const payload = {
-          language_id: Number(a.language_id || 204),
-          source_code: String(a.source_code || ""),
-          suite: "FileIO",
-          test_cases: [
-            {
-              id: 1,
-              files: { [inName]: inContent },
-              output_file: outName,
-              expected_output: a.expected_output ? String(a.expected_output) : undefined,
-            },
-          ],
-        };
-        const res = await callEschatonApi("/v1/execute", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
+          case "eschaton_fileio_eval": {
+            const a = (args || {}) as any;
+            const inName = String(a.input_filename || "input.txt");
+            const inContent = String(a.input_content || "DATA");
+            const outName = String(a.output_filename || "output.txt");
+            const payload = {
+              language_id: Number(a.language_id || 204),
+              source_code: String(a.source_code || ""),
+              suite: "FileIO",
+              test_cases: [
+                {
+                  id: 1,
+                  files: { [inName]: inContent },
+                  output_file: outName,
+                  expected_output: a.expected_output ? String(a.expected_output) : undefined,
+                },
+              ],
+            };
+            const res = await callEschatonApi("/v1/execute", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          }
 
-      case "eschaton_special_judge": {
-        const a = (args || {}) as any;
-        const payload = {
-          language_id: Number(a.language_id || 202),
-          source_code: String(a.source_code || ""),
-          suite: "SpecialJudge",
-          checker_code: String(a.checker_code || ""),
-          checker_language_id: Number(a.checker_language_id || 202),
-          test_cases: [
-            {
-              id: 1,
-              stdin: String(a.stdin || "5.0"),
-              expected_output: String(a.expected_output || "2.5"),
-            },
-          ],
-        };
-        const res = await callEschatonApi("/v1/execute", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
+          case "eschaton_special_judge": {
+            const a = (args || {}) as any;
+            const payload = {
+              language_id: Number(a.language_id || 202),
+              source_code: String(a.source_code || ""),
+              suite: "SpecialJudge",
+              checker_code: String(a.checker_code || ""),
+              checker_language_id: Number(a.checker_language_id || 202),
+              test_cases: [
+                {
+                  id: 1,
+                  stdin: String(a.stdin || "5.0"),
+                  expected_output: String(a.expected_output || "2.5"),
+                },
+              ],
+            };
+            const res = await callEschatonApi("/v1/execute", {
+              method: "POST",
+              body: JSON.stringify(payload),
+            });
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          }
 
-      default:
+          default:
             runnerCmd = `python3 -c "import base64; exec(base64.b64decode('${b64}').decode('utf-8'))"`;
         }
 
