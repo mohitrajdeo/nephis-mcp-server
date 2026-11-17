@@ -326,9 +326,14 @@ def cmd_projects(args):
     try:
         if args.action == "list":
             res = client._request("GET", "/api/v1/projects")
-            projects = res.get("projects", res) if isinstance(res, dict) else res
-            if not isinstance(projects, list):
+            projects = res.get("projects", []) if isinstance(res, dict) else res
+            if projects is None:
+                projects = []
+            elif not isinstance(projects, list):
                 projects = [projects]
+            if not projects:
+                print("No projects found for this organization. Deploy one with 'thanaton deploy'.")
+                return
             headers = ["ID", "NAME", "SLUG", "RUNTIME", "PORT", "STATE", "FULL DOMAIN"]
             rows = []
             for p in projects:
