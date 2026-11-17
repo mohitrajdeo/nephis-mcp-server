@@ -48,7 +48,8 @@ GENERAL_MAN = f"""{colorize("MNEMON(1)", BOLD)}                       {colorize(
     7. Quantize Vectors:         {colorize("mnemon quantize set <db> --table docs --dimensions 1536", GREEN)}
 
 {colorize("ALL AVAILABLE COMMANDS", BOLD)}
-    {colorize("branch", GREEN)}       Create instant 31ms CoW reflink branch (0 initial bytes copied)
+    {colorize("branch", GREEN)}       Create instant 31ms CoW reflink branch (supports --mask-pii)
+    {colorize("merge", GREEN)}        Fast-forward merge schema migrations from a branch back to parent in <200ms
     {colorize("quantize", GREEN)}     pgvector + HNSW-PQ vector quantization & disk-spill memory indexing
     {colorize("import", GREEN)}       Zero-downtime database importer from Neon / Supabase with live cutover
     {colorize("reconcile", GREEN)}    3-way schema reconciliation and migration conflict resolution
@@ -97,13 +98,15 @@ COMMAND_MANS = {
     mnemon-branch - Create instant zero-copy database branch via XFS FICLONE reflinks
 
 {colorize("SYNOPSIS", BOLD)}
-    {colorize("mnemon branch", GREEN)} {colorize("TENANT_ID", YELLOW)} {colorize("NEW_BRANCH", YELLOW)} [{colorize("--parent", CYAN)} {colorize("PARENT", YELLOW)}] [{colorize("--lsn", CYAN)} {colorize("LSN", YELLOW)}] [{colorize("--json", CYAN)}]
+    {colorize("mnemon branch", GREEN)} {colorize("TENANT_ID", YELLOW)} {colorize("NEW_BRANCH", YELLOW)} [{colorize("--parent", CYAN)} {colorize("PARENT", YELLOW)}] [{colorize("--lsn", CYAN)} {colorize("LSN", YELLOW)}] [{colorize("--mask-pii", CYAN)}] [{colorize("--json", CYAN)}]
 
 {colorize("DESCRIPTION", BOLD)}
     Creates a new isolated branch of a PostgreSQL 16 database cluster in under
     31 milliseconds. Leverages Linux kernel filesystem block reflinks (ioctl FICLONE).
     Zero physical disk space is initially allocated; reads hit the shared parent extents,
     and writes append copy-on-write delta extents.
+    When --mask-pii is specified, sensitive personal data (emails, names, phones) is
+    automatically pseudonymized with deterministic hashes on the child branch extents.
 
 {colorize("ARGUMENTS & OPTIONS", BOLD)}
     {colorize("TENANT_ID", BOLD)}
@@ -118,6 +121,9 @@ COMMAND_MANS = {
     {colorize("--lsn LSN", BOLD)}
         Target Log Sequence Number (LSN) for historical point-in-time branch forks. Default: 0.
 
+    {colorize("--mask-pii", BOLD)}
+        Automatically detect and mask sensitive PII (emails, names, phones) in child branch.
+
     {colorize("--json", BOLD)}
         Outputs raw JSON containing connection string, branch ID, and creation latency.
 
@@ -125,14 +131,15 @@ COMMAND_MANS = {
     {colorize("# Example 1: Fork a staging branch from main in 31ms", DIM)}
     mnemon branch prod-db staging --parent main
 
-    {colorize("# Example 2: Fork a feature branch for an automated pull request", DIM)}
-    mnemon branch my-app feat-auth-migration --parent main
+    {colorize("# Example 2: Fork a sanitized branch with PII masking for safe LLM evaluation", DIM)}
+    mnemon branch prod-db safe-eval --parent main --mask-pii
 
     {colorize("# Example 3: Fork from historical LSN to isolate a corrupt transaction", DIM)}
     mnemon branch prod-db audit-recovery --parent main --lsn 0/16B38D8 --json
 
 {colorize("CREDIT COST", BOLD)}
-    5.0 Credits ($0.0010 USD) per branch created.
+    • 2.0 Credits ($0.0004 USD) standard zero-copy branch.
+    • 3.0 Credits ($0.0006 USD) with automated PII masking.
 """,
 
     "quantize": f"""{colorize("MNEMON-QUANTIZE(1)", BOLD)}            {colorize("User Manual", DIM)}            {colorize("MNEMON-QUANTIZE(1)", BOLD)}
@@ -377,22 +384,46 @@ COMMAND_MANS = {
     mnemon ext prod-db list
 """,
 
+    "merge": f"""{colorize("MNEMON-MERGE(1)", BOLD)}               {colorize("User Manual", DIM)}              {colorize("MNEMON-MERGE(1)", BOLD)}
+
+{colorize("NAME", BOLD)}
+    mnemon-merge - Fast-forward merge schema migrations from branch back to parent
+
+{colorize("SYNOPSIS", BOLD)}
+    {colorize("mnemon merge", GREEN)} {colorize("TENANT_ID", YELLOW)} {colorize("BRANCH", YELLOW)} [{colorize("--parent", CYAN)} {colorize("PARENT", YELLOW)}] [{colorize("--json", CYAN)}]
+
+{colorize("DESCRIPTION", BOLD)}
+    Calculates structural schema DDL diffs between child branch and parent trunk,
+    verifying non-divergence, and applies fast-forward schema merge in <200ms
+    without requiring manual dump/restore or database locking.
+
+{colorize("EXAMPLES FOR AI AGENTS", BOLD)}
+    mnemon merge prod-db feat-add-users --parent main
+
+{colorize("CREDIT COST", BOLD)}
+    2.0 Credits ($0.0004 USD) per merge operation.
+""",
+
     "sql": f"""{colorize("MNEMON-SQL(1)", BOLD)}                 {colorize("User Manual", DIM)}                {colorize("MNEMON-SQL(1)", BOLD)}
 
 {colorize("NAME", BOLD)}
-    mnemon-sql - Execute raw SQL query against database cluster or branch
+    mnemon-sql - Execute raw SQL query against database cluster or branch (supports inline time-travel)
 
 {colorize("SYNOPSIS", BOLD)}
-    {colorize("mnemon sql", GREEN)} {colorize("TENANT_ID", YELLOW)} {colorize("QUERY", YELLOW)} [{colorize("--branch", CYAN)} {colorize("BRANCH", YELLOW)}] [{colorize("--json", CYAN)}]
+    {colorize("mnemon sql", GREEN)} {colorize("TENANT_ID", YELLOW)} {colorize("QUERY", YELLOW)} [{colorize("--branch", CYAN)} {colorize("BRANCH", YELLOW)}] [{colorize("--as-of-lsn", CYAN)} {colorize("LSN", YELLOW)}] [{colorize("--json", CYAN)}]
 
 {colorize("DESCRIPTION", BOLD)}
     Executes an arbitrary SQL query (SELECT, INSERT, UPDATE, DDL) against the
-    specified database cluster. Returns execution latency, rows affected, and
-    query results in ASCII table or JSON format.
+    specified database cluster. Supports inline point-in-time time-travel queries
+    using --as-of-lsn without requiring a separate branch allocation.
 
 {colorize("EXAMPLES FOR AI AGENTS", BOLD)}
     mnemon sql prod-db "SELECT count(*), status FROM orders GROUP BY status;"
+    mnemon sql prod-db "SELECT * FROM balances WHERE id = 1;" --as-of-lsn 0/16B3740
     mnemon sql prod-db "SELECT id, title FROM docs LIMIT 5;" --json
+
+{colorize("CREDIT COST", BOLD)}
+    1.0 Credit ($0.0002 USD) per query execution.
 """,
 
     "cdc": f"""{colorize("MNEMON-CDC(1)", BOLD)}                 {colorize("User Manual", DIM)}                {colorize("MNEMON-CDC(1)", BOLD)}

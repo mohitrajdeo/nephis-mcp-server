@@ -52,6 +52,10 @@ GENERAL_MAN = f"""{colorize("THANATON(1)", BOLD)}                     {colorize(
     {colorize("sleep", GREEN)}        Scale a sandbox to zero (hibernate RAM to snapshot, $0 cost)
     {colorize("wake", GREEN)}         Wake hibernated sandbox from NVMe snapshot in <6ms
     {colorize("rm", GREEN)}           Destroy and reclaim sandbox hardware resources
+    {colorize("goldenami", GREEN)}    List pre-baked Golden AMI runtimes (node22, python312, golang122, nextjs)
+    {colorize("ramsnap", GREEN)}      Fast guest RAM snapshots directly to /dev/shm (14ms dump, 11ms restore)
+    {colorize("shield", GREEN)}       eBPF kernel TAP outbound secret exfiltration firewall
+    {colorize("display", GREEN)}      Headless browser canvas virtual framebuffer capture & CDP streaming
     {colorize("attach", GREEN)}       Connect interactive PTY terminal stream to a sandbox
     {colorize("ports", GREEN)}        Manage Layer 4 raw TCP port forwarding
     {colorize("race", GREEN)}         Execute multi-candidate speculative racing across parallel VMs
@@ -73,6 +77,11 @@ GENERAL_MAN = f"""{colorize("THANATON(1)", BOLD)}                     {colorize(
     • MicroVM Cold Boot:      5.0 Credits ($0.0010)
     • Active vCPU Minute:     1.0 Credit / min ($0.00020)
     • Scale-to-Zero Stasis:   0.0 Credits ($0.0000 - 100% Free Idle)
+    • Golden AMI Registry:    0.0 Credits to inspect (Free)
+    • RAM Snapshot Capture:   2.0 Credits ($0.00040)
+    • RAM Snapshot Restore:   1.0 Credit ($0.00020)
+    • eBPF Secret Shield:     1.0 Credit activation / 0 Credits monitoring
+    • Headless Display Frame: 1.0 Credit / frame / 5 Credits/hr CDP stream
     • AST Cache Hit:          0.2 Credits ($0.00004)
     • Snapshot Capture/Rest:  2.0 Credits ($0.00040)
 
@@ -299,6 +308,94 @@ COMMAND_MANS = {
 
     {colorize("# Expose internal PostgreSQL database on port 5432", DIM)}
     thanaton ports expose sbx-kvm-9f82d1 --port 5432 --service postgres
+""",
+
+    "goldenami": f"""{colorize("THANATON-GOLDENAMI(1)", BOLD)}          {colorize("User Manual", DIM)}         {colorize("THANATON-GOLDENAMI(1)", BOLD)}
+
+{colorize("NAME", BOLD)}
+    thanaton-goldenami - Inspect pre-baked Golden AMI runtimes for instant microVM boot
+
+{colorize("SYNOPSIS", BOLD)}
+    {colorize("thanaton goldenami", GREEN)} [{colorize("--json", CYAN)}]
+
+{colorize("DESCRIPTION", BOLD)}
+    Lists available immutable pre-baked root filesystem profiles (node22, python312,
+    golang122, nextjs) with pre-installed language toolchains and common libraries.
+    Eliminates boot package-install delay and achieves <6ms cold start.
+
+{colorize("EXAMPLES FOR AI AGENTS", BOLD)}
+    thanaton goldenami
+    thanaton goldenami --json
+
+{colorize("CREDIT COST", BOLD)}
+    Free (0.0 Credits) to inspect. Standard 5.0 Credits on deployment.
+""",
+
+    "ramsnap": f"""{colorize("THANATON-RAMSNAP(1)", BOLD)}            {colorize("User Manual", DIM)}           {colorize("THANATON-RAMSNAP(1)", BOLD)}
+
+{colorize("NAME", BOLD)}
+    thanaton-ramsnap - Pre-warmed guest RAM memory snapshot to /dev/shm
+
+{colorize("SYNOPSIS", BOLD)}
+    {colorize("thanaton ramsnap create", GREEN)} {colorize("SANDBOX_ID", YELLOW)} [{colorize("--warm-packages", CYAN)} {colorize("PKGS", YELLOW)}] [{colorize("--json", CYAN)}]
+    {colorize("thanaton ramsnap restore", GREEN)} {colorize("SNAPSHOT_ID", YELLOW)} [{colorize("--sandbox-id", CYAN)} {colorize("ID", YELLOW)}] [{colorize("--json", CYAN)}]
+
+{colorize("DESCRIPTION", BOLD)}
+    Dumps guest physical memory pages directly into POSIX shared memory (/dev/shm) in ~14.5ms.
+    Allows instant sub-12ms memory state hydration for fast speculative branch spawning,
+    replacing complex hypervisor time-travel determinism with practical RAM snapshots.
+
+{colorize("EXAMPLES FOR AI AGENTS", BOLD)}
+    thanaton ramsnap create sbx-kvm-9f82d1 --warm-packages next,react,prisma
+    thanaton ramsnap restore ramsnap-1794886000018 --sandbox-id sbx-kvm-new
+
+{colorize("CREDIT COST", BOLD)}
+    • 2.0 Credits ($0.00040 USD) per snapshot capture.
+    • 1.0 Credit ($0.00020 USD) per snapshot restore.
+""",
+
+    "shield": f"""{colorize("THANATON-SHIELD(1)", BOLD)}             {colorize("User Manual", DIM)}            {colorize("THANATON-SHIELD(1)", BOLD)}
+
+{colorize("NAME", BOLD)}
+    thanaton-shield - eBPF kernel TAP outbound secret exfiltration firewall
+
+{colorize("SYNOPSIS", BOLD)}
+    {colorize("thanaton shield", GREEN)} {colorize("SANDBOX_ID", YELLOW)} [{colorize("{get,enable,disable}", CYAN)}] [{colorize("--json", CYAN)}]
+
+{colorize("DESCRIPTION", BOLD)}
+    Attaches a kernel-level eBPF filter on the guest microVM's virtual TAP interface.
+    Inspects all outbound network traffic for credential signatures (OpenAI keys,
+    Anthropic keys, AWS credentials, JWT tokens) and instantly drops exfiltration packets.
+
+{colorize("EXAMPLES FOR AI AGENTS", BOLD)}
+    thanaton shield sbx-kvm-9f82d1
+    thanaton shield sbx-kvm-9f82d1 enable
+    thanaton shield sbx-kvm-9f82d1 disable
+
+{colorize("CREDIT COST", BOLD)}
+    1.0 Credit ($0.00020 USD) to enable; 0 Credits for continuous active filtering.
+""",
+
+    "display": f"""{colorize("THANATON-DISPLAY(1)", BOLD)}            {colorize("User Manual", DIM)}           {colorize("THANATON-DISPLAY(1)", BOLD)}
+
+{colorize("NAME", BOLD)}
+    thanaton-display - Headless browser canvas virtual framebuffer capture & CDP stream
+
+{colorize("SYNOPSIS", BOLD)}
+    {colorize("thanaton display", GREEN)} {colorize("SANDBOX_ID", YELLOW)} [{colorize("--format", CYAN)} {colorize("{jpeg,png,webp}", YELLOW)}] [{colorize("--quality", CYAN)} {colorize("Q", YELLOW)}] [{colorize("--out", CYAN)} {colorize("FILE", YELLOW)}] [{colorize("--json", CYAN)}]
+
+{colorize("DESCRIPTION", BOLD)}
+    Captures live screenshots or frame buffers from a headless Chromium/Firefox
+    running inside the microVM via Chrome DevTools Protocol (CDP) or /dev/fb0.
+    Enables visual AI browser verification, layout testing, and UI debugging.
+
+{colorize("EXAMPLES FOR AI AGENTS", BOLD)}
+    thanaton display sbx-kvm-9f82d1 --format jpeg --quality 80
+    thanaton display sbx-kvm-9f82d1 --out screenshot.jpg
+
+{colorize("CREDIT COST", BOLD)}
+    • 1.0 Credit ($0.00020 USD) per screenshot capture frame.
+    • 5.0 Credits ($0.0010 USD) per hour of live CDP interactive session streaming.
 """
 }
 

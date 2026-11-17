@@ -6,7 +6,7 @@
 [![MCP Protocol](https://img.shields.io/badge/MCP-Protocol%202024--11--05-purple.svg)](https://modelcontextprotocol.io/)
 [![npm version](https://img.shields.io/npm/v/nephis-mcp-server.svg)](https://www.npmjs.com/package/nephis-mcp-server)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tools Count](https://img.shields.io/badge/Tools-63%20Production%20Tools-brightgreen.svg)](#-exhaustive-catalog-of-all-63-mcp-tools)
+[![Tools Count](https://img.shields.io/badge/Tools-92%20Production%20Tools-brightgreen.svg)](#-exhaustive-catalog-of-all-92-mcp-tools)
 
 ---
 
@@ -42,7 +42,7 @@ The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants directl
                             │ JSON-RPC 2.0 (stdio / SSE)
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│ NEPHIS Unified MCP Server (63 Production Tools)        │
+│ NEPHIS Unified MCP Server (92 Production Tools)        │
 └───────┬───────────────────┬───────────────────┬────────┘
         │                   │                   │
         ▼                   ▼                   ▼
@@ -135,7 +135,7 @@ Add `nephis` to your project's `antigravity.json` or run `npx nephis-mcp-server`
 
 ---
 
-## 🛠 Exhaustive Catalog of All 63 MCP Tools
+## 🛠 Exhaustive Catalog of All 92 MCP Tools
 
 
 ## THANATON • Hardware KVM MicroVMs & Compute Sandboxes
@@ -901,6 +901,7 @@ Contains **14 production tools** specifically designed for agent autonomy.
 | `tenant_id` | `string` | ✅ Yes | - | Database tenant/cluster identifier |
 | `new_branch` | `string` | ✅ Yes | - | Name for the new branch (e.g. 'feature-migration') |
 | `parent_branch` | `string` | ❌ No | - | Parent branch name (default: 'main') |
+| `mask_pii` | `boolean` | ❌ No | `false` | Mask sensitive PII fields (emails, names, phones) with deterministic SHA-256 hashes |
 | `target_lsn` | `number` | ❌ No | - | Optional WAL LSN for point-in-time fork |
 
 **Sample JSON-RPC Invocation:**
@@ -1022,6 +1023,7 @@ Contains **14 production tools** specifically designed for agent autonomy.
 | :--- | :--- | :---: | :---: | :--- |
 | `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
 | `query` | `string` | ✅ Yes | - | SQL query statement to execute |
+| `as_of_lsn` | `string` | ❌ No | - | Optional historical WAL LSN for inline point-in-time time-travel query |
 
 **Sample JSON-RPC Invocation:**
 ```json
@@ -1394,6 +1396,79 @@ Contains **3 production tools** specifically designed for agent autonomy.
 }
 ```
 
+---
+
+### 42. `mnemon_merge_branch`
+
+> **Description:** Fast-forward merge schema migrations from a branch back to parent trunk in <200ms. Verifies non-divergence and applies migrations without table locks or cluster restarts.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `tenant_id` | `string` | ✅ Yes | - | Database tenant identifier |
+| `branch_id` | `string` | ✅ Yes | - | Branch identifier to merge |
+| `parent_branch` | `string` | ❌ No | `"main"` | Target parent branch |
+
+---
+
+### 43. `thanaton_list_golden_amis`
+
+> **Description:** List available pre-baked Golden AMI runtimes (`node22`, `python312`, `golang122`, `nextjs`) with pre-installed language toolchains and common packages. Eliminates cold package installation delays.
+
+---
+
+### 44. `thanaton_create_ram_snapshot`
+
+> **Description:** Capture running guest RAM state directly to high-speed POSIX shared memory (`/dev/shm`) in ~14.5ms. Allows sub-12ms speculative branch spawning without hypervisor determinism overhead.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | Target sandbox ID |
+| `warm_packages` | `array` | ❌ No | `[]` | List of pre-imported packages to register in memory snapshot |
+
+---
+
+### 45. `thanaton_restore_ram_snapshot`
+
+> **Description:** Restore a guest microVM memory state from a pre-warmed RAM snapshot in 11.8ms.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `snapshot_id` | `string` | ✅ Yes | - | Snapshot ID to restore |
+| `sandbox_id` | `string` | ❌ No | `"default"` | Target sandbox ID to hydrate |
+
+---
+
+### 46. `thanaton_secret_shield_status`
+
+> **Description:** Inspect or configure the eBPF kernel TAP outbound secret exfiltration firewall. Drops unauthorized credential leaks (OpenAI, Anthropic, AWS, JWT) in kernel space.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | Target sandbox ID |
+| `action` | `string` | ❌ No | `"get"` | Action to perform (`get`, `enable`, `disable`) |
+
+---
+
+### 47. `thanaton_capture_browser_display`
+
+> **Description:** Capture real-time screenshot or CDP stream frame from a guest headless browser canvas via virtual framebuffer (`/dev/fb0`) or Chrome DevTools Protocol.
+
+**Parameter Specification:**
+
+| Parameter | Type | Required | Default | Details & Constraints |
+| :--- | :--- | :---: | :---: | :--- |
+| `sandbox_id` | `string` | ✅ Yes | - | Target sandbox ID |
+| `format` | `string` | ❌ No | `"jpeg"` | Image format (`jpeg`, `png`, `webp`) |
+| `quality` | `number` | ❌ No | `80` | Compression quality (1-100) |
+
 ## 💻 Developer SDKs & Native Command-Line Tools (CLI)
 
 Beyond the Model Context Protocol (MCP) JSON-RPC transport, NEPHIS provides first-class native command-line interfaces and client SDKs for automated terminal scripting, CI/CD test automation, and full-stack application development.
@@ -1403,39 +1478,57 @@ Available as a zero-dependency CLI wrapper (`sdk/cli/thanaton.bat` on Windows or
 
 ```bash
 # Provision a sub-6ms hardware KVM MicroVM (512MB RAM, attached Postgres DB)
-thanaton spawn --runtime microvm --memory 512 --with-db
+thanaton up --runtime microvm --memory-mb 512 --db
 
 # Execute arbitrary bash / terminal commands inside the isolated sandbox
-thanaton exec sbx-kvm-9f82d1 "npm test"
+thanaton exec sbx-kvm-9f82d1 -- npm test
+
+# Query pre-baked Golden AMI runtimes (node22, python312, golang122, nextjs)
+thanaton goldenami
+
+# Capture running guest RAM state directly to /dev/shm in ~14ms
+thanaton ramsnap create sbx-kvm-9f82d1 --warm-packages next,react
+
+# Enable eBPF kernel TAP outbound secret exfiltration firewall
+thanaton shield sbx-kvm-9f82d1 enable
+
+# Capture live headless browser canvas frame (screenshot)
+thanaton display sbx-kvm-9f82d1 --out screenshot.jpg
 
 # Put sandbox into compressed stasis (Scale-to-Zero, $0 RAM burn)
-thanaton stasis sbx-kvm-9f82d1
+thanaton sleep sbx-kvm-9f82d1
 
 # Instant hardware cold-wake from stasis (Sub-6ms SLA)
 thanaton wake sbx-kvm-9f82d1
 
 # Expose a local MicroVM port for live browser preview (e.g. Next.js on port 3000)
-thanaton port expose sbx-kvm-9f82d1 3000
+thanaton ports expose sbx-kvm-9f82d1 --port 3000
 ```
 
 ### 2. Mnemon-DB Serverless PostgreSQL CLI (`mnemon`)
 Available as a native CLI tool (`sdk/cli/mnemon.bat` on Windows or `mnemon` on Linux):
 
 ```bash
-# Instant zero-copy snapshot branch creation via Linux XFS reflink blocks (<30ms)
-mnemon branch create feat-user-auth --from main
+# Instant zero-copy snapshot branch creation via Linux XFS reflink blocks (<31ms)
+mnemon branch prod-db staging --parent main
 
-# Execute raw SQL directly against the branch sandbox
-mnemon sql --branch feat-user-auth "SELECT COUNT(*) FROM users WHERE is_active = true;"
+# Fork a sanitized branch with automated PII masking (emails, names, phones)
+mnemon branch prod-db safe-eval --parent main --mask-pii
+
+# Execute raw SQL directly against the branch (supports inline AS OF LSN time-travel)
+mnemon sql prod-db "SELECT * FROM balances WHERE id = 1;" --as-of-lsn 0/16B3740
+
+# Fast-forward merge schema migrations from a branch back to parent trunk in <200ms
+mnemon merge prod-db feat-auth-migration --parent main
 
 # Structural schema and data delta comparison between branches
-mnemon branch diff main feat-user-auth
+mnemon diff prod-db --branch staging --target main
 
 # Point-in-Time WAL rewind to an exact PostgreSQL Log Sequence Number (LSN)
-mnemon rewind --branch feat-user-auth --lsn 0/16B38D8
+mnemon pitr restore prod-db --target-lsn 0/16B38D8
 
 # Promote verified staging branch to production zero-downtime
-mnemon branch promote feat-user-auth --target main
+mnemon promote prod-db staging --target main
 ```
 
 ### 3. Eschaton Code Execution CLI (`eschatonctl`)
