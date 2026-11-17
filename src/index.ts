@@ -617,6 +617,7 @@ const TOOLS: Tool[] = [
         new_branch: { type: "string", description: "Name for the new branch (e.g. 'feature-migration')" },
         parent_branch: { type: "string", description: "Parent branch name (default: 'main')" },
         target_lsn: { type: "number", description: "Optional WAL LSN for point-in-time fork" },
+        mask_pii: { type: "boolean", description: "Mask sensitive PII columns in child branch for GDPR/HIPAA compliance" },
       },
       required: ["tenant_id", "new_branch"],
     },
@@ -629,6 +630,19 @@ const TOOLS: Tool[] = [
       properties: {
         tenant_id: { type: "string", description: "Database tenant identifier" },
         branch_id: { type: "string", description: "Branch ID to promote to primary root" },
+      },
+      required: ["tenant_id", "branch_id"],
+    },
+  },
+  {
+    name: "mnemon_merge_branch",
+    description: "Fast-forward merge schema modifications and table additions from a staging/feature branch back to parent trunk in <200ms.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        branch_id: { type: "string", description: "Branch ID containing changes to merge" },
+        parent_branch: { type: "string", description: "Parent target branch (default: 'main')" },
       },
       required: ["tenant_id", "branch_id"],
     },

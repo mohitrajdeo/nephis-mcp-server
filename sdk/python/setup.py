@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="nephis",
-    version="1.0.3",
+    version="1.0.4",
     description="NEPHIS: High-Throughput Isolated Execution Substrate & Zero-Copy Database Branching for AI Agents",
     author="Mohit Raj Deo",
     author_email="mohit@mohitrajdeo.in",

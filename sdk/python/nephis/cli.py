@@ -10,28 +10,28 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-# Ensure local nephis package can be imported directly
+# Ensure local ananke package can be imported directly
 current_dir = Path(__file__).resolve().parent
 sdk_python_dir = current_dir.parent
 if str(sdk_python_dir) not in sys.path:
     sys.path.insert(0, str(sdk_python_dir))
 
 try:
-    import nephis
-    from nephis.exceptions import NephisError
-    from nephis.license import LicenseAuthority, LicenseToken, LicenseError
+    import ananke
+    from ananke.exceptions import AnankeError
+    from ananke.license import LicenseAuthority, LicenseToken, LicenseError
 except ImportError:
-    print("[ERROR] Could not load 'nephis' Python package.", file=sys.stderr)
+    print("[ERROR] Could not load 'ananke' Python package.", file=sys.stderr)
     sys.exit(1)
 
 from nephis.auth import resolve_base_url, resolve_api_key, bootstrap_agent_key, save_credentials
 
 
-def get_client() -> nephis.Client:
+def get_client() -> ananke.Client:
     base_url = resolve_base_url()
     api_key = resolve_api_key(base_url=base_url)
-    lic = os.environ.get("NEPHIS_LICENSE_KEY", os.environ.get("CIEL_LICENSE_KEY", os.environ.get("NEPHIS_LICENSE_KEY")))
-    return nephis.Client(base_url=base_url, api_key=api_key, license_key=lic)
+    lic = os.environ.get("NEPHIS_LICENSE_KEY", os.environ.get("CIEL_LICENSE_KEY", os.environ.get("ANANKE_LICENSE_KEY")))
+    return ananke.Client(base_url=base_url, api_key=api_key, license_key=lic)
 
 
 def print_table(headers, rows):
@@ -485,13 +485,13 @@ def cmd_rewind(args):
 
 def cmd_license(args):
     if args.action == "status":
-        token = os.environ.get("NEPHIS_LICENSE_KEY")
+        token = os.environ.get("ANANKE_LICENSE_KEY")
         auth = LicenseAuthority(token)
         print(json.dumps(auth.status(), indent=2))
     elif args.action == "generate":
         lic = LicenseToken(tenant_id=args.tenant, tier=args.tier, expires_in_days=args.days)
         tok = lic.generate()
-        print(f"[+] Generated Nephis {args.tier.upper()} License for tenant '{args.tenant}':")
+        print(f"[+] Generated Ananke {args.tier.upper()} License for tenant '{args.tenant}':")
         print(tok)
     elif args.action == "verify":
         try:
@@ -504,7 +504,7 @@ def cmd_license(args):
 
 
 # ----------------------------------------------------
-# Nephis Series Products Handlers
+# Ananke Series Products Handlers
 # ----------------------------------------------------
 
 def cmd_cdc(args):
@@ -602,7 +602,7 @@ def cmd_live_migrate(args):
 
 
 # ----------------------------------------------------
-# Nephis Even Series Handlers
+# Ananke Even Series Handlers
 # ----------------------------------------------------
 
 def cmd_bastion(args):
@@ -771,7 +771,7 @@ def cmd_research(args):
     print("   (100% Commodity CPU + NVMe Hardware | Zero Specialized Locks)   ")
     print("==================================================================")
     papers = [
-        ("Eschaton Router (ATC '24 Pre-Decision & Dual Scaling)", "O(1) Bitwise Route, Sub-ms Thaw"),
+        ("JIAGU (ATC '24 Pre-Decision & Dual Scaling)", "O(1) Bitwise Route, Sub-ms Thaw"),
         ("PEER (OSDI '26 Preemptible eBPF / sched_ext)", "0.00% Drops, Helper Budget Yield"),
         ("µSLICE (ACM 2026 Sub-Core Allocation)", "1ms Rolling Window, 0 CFS Cliff"),
         ("I/O PASSTHRU (FAST '24 io_uring_cmd NVMe)", "User-Space Async Ring, Zero-VFS Bypass"),
@@ -815,7 +815,7 @@ def cmd_admin(args):
 
 
 # ----------------------------------------------------
-# Nephis Multiverse CLI Handlers
+# 2026 Sovereign & Kronos Multiverse CLI Handlers
 # ----------------------------------------------------
 
 def cmd_multiverse(args):
@@ -823,7 +823,7 @@ def cmd_multiverse(args):
     timelines = getattr(args, "timelines", 50)
     seed = getattr(args, "seed", 1337)
     if action == "fork":
-        print(f"[*] Nephis Speculative Engine: Spawning {timelines} parallel multiverse timelines (seed={seed})...")
+        print(f"[*] Kronos Titan 7: Spawning {timelines} parallel multiverse timelines (seed={seed})...")
         res = {
             "status": "MULTIVERSE_EXPLORATION_COMPLETE",
             "total_timelines": timelines,
@@ -838,7 +838,7 @@ def cmd_multiverse(args):
         }
         print(json.dumps(res, indent=2))
     elif action == "replay":
-        print(f"[*] Nephis Deterministic Engine: Bit-exact replay of timeline seed #{seed}...")
+        print(f"[*] Kronos: Bit-exact replay of timeline seed #{seed}...")
         res = {
             "status": "REPLAY_BIT_IDENTICAL",
             "seed": seed,
@@ -1093,10 +1093,10 @@ PRODUCT_SUITES = {
     },
     "fabric": {
         "title": "SOVEREIGN FABRIC • Kernel Infrastructure & Systems Moats",
-        "description": "Nephis Autonomous Infrastructure, FinOps, Networking & Reliability Core",
+        "description": "Ananke Autonomous Infrastructure, FinOps, Networking & Reliability Core",
         "portal": "https://nephis.theeducode.com",
         "commands": [
-            ("license", "Nephis cryptographic license authority & tier status"),
+            ("license", "Ananke cryptographic license authority & tier status"),
             ("admin", "Cluster administrative operations, node draining, and quarantine killswitch"),
             ("dns", "Sub-microsecond ephemeral wildcard DNS (Xdpdns)"),
             ("rootfs", "Zero-download lazy rootfs block streamer (Nbdstream)"),
@@ -1112,7 +1112,7 @@ PRODUCT_SUITES = {
             ("reclaim", "Out-of-band inactive memory reclaimer (memreclaim)"),
             ("graynet", "Gray-failure network stack simulator (graynet)"),
             ("ioarbiter", "Dynamic NVMe I/O fair-share QoS arbiter (ioarbiter)"),
-            ("multiverse", "Nephis Deterministic Engine parallel multiverse timeline explorer"),
+            ("multiverse", "Kronos parallel multiverse timeline explorer"),
             ("clock", "Hermit zero-drift virtual pseudo-clock control"),
             ("webhook", "High-throughput outbound webhooks with anti-SSRF firewall (HookQ)"),
             ("mail", "Unified email dispatcher and inbox manager (mohitrajdeo.in)"),
@@ -1209,7 +1209,7 @@ def main():
         # Strip product namespace and forward to subparser: e.g. ['nephisctl', 'thanaton', 'up'] -> ['nephisctl', 'up']
         sys.argv.pop(1)
 
-    parser = argparse.ArgumentParser(prog="nephisctl", description="Unified Nephis Control Plane & Infrastructure CLI")
+    parser = argparse.ArgumentParser(prog="nephisctl", description="Unified Ananke Control Plane & Infrastructure CLI")
     parser.format_help = get_nephis_categorized_help
     subparsers = parser.add_subparsers(dest="subcommand", required=True)
 
@@ -1232,7 +1232,7 @@ def main():
     p_status = subparsers.add_parser("status", help="Check live operational status of all Nephis cloud engines")
     p_status.set_defaults(func=cmd_status)
 
-    # 1. nephis up
+    # 1. ananke up
     p_up = subparsers.add_parser("up", help="Boot an isolated sandbox")
     p_up.add_argument("--runtime", choices=["silicon", "microvm"], default="silicon", help="Execution runtime")
     p_up.add_argument("--with-db", action="store_true", help="Bundle an ephemeral PostgreSQL 16 + pgvector instance")
@@ -1263,32 +1263,32 @@ def main():
     p_sql.add_argument("query", help="SQL query to execute")
     p_sql.set_defaults(func=cmd_sql)
 
-    # 4. nephis freeze <sandbox_id>
+    # 4. ananke freeze <sandbox_id>
     p_freeze = subparsers.add_parser("freeze", help="Freeze sandbox CPU via cgroups v2")
     p_freeze.add_argument("sandbox_id", help="Sandbox identifier")
     p_freeze.set_defaults(func=cmd_freeze)
 
-    # 5. nephis resume <sandbox_id>
+    # 5. ananke resume <sandbox_id>
     p_resume = subparsers.add_parser("resume", help="Resume frozen sandbox via cgroups v2")
     p_resume.add_argument("sandbox_id", help="Sandbox identifier")
     p_resume.set_defaults(func=cmd_resume)
 
-    # 6. nephis ps
+    # 6. ananke ps
     p_ps = subparsers.add_parser("ps", help="List active sandboxes")
     p_ps.add_argument("--json", action="store_true", help="Output JSON array")
     p_ps.set_defaults(func=cmd_ps)
 
-    # 7. nephis rm <sandbox_id>
+    # 7. ananke rm <sandbox_id>
     p_rm = subparsers.add_parser("rm", help="Destroy sandbox")
     p_rm.add_argument("sandbox_id", help="Sandbox identifier")
     p_rm.set_defaults(func=cmd_rm)
 
-    # 7b. nephis attach <sandbox_id> (Interactive PTY Terminal)
+    # 7b. ananke attach <sandbox_id> (Interactive PTY Terminal)
     p_att = subparsers.add_parser("attach", help="Connect interactive PTY terminal to a running sandbox")
     p_att.add_argument("sandbox_id", help="Sandbox identifier")
     p_att.set_defaults(func=cmd_attach)
 
-    # 7c. nephis ports (expose|list|close)
+    # 7c. ananke ports (expose|list|close)
     p_pts = subparsers.add_parser("ports", help="Manage Layer 4 raw TCP port forwarding")
     p_pts_sub = p_pts.add_subparsers(dest="action", required=True)
     p_pts_exp = p_pts_sub.add_parser("expose", help="Forward an external host port to a sandbox guest port")
@@ -1302,20 +1302,20 @@ def main():
     p_pts_cls.add_argument("--port", type=int, required=True, help="Host port to close")
     p_pts.set_defaults(func=cmd_ports)
 
-    # 7d. nephis race (Multi-candidate speculative racing)
+    # 7d. ananke race (Multi-candidate speculative racing)
     p_rce = subparsers.add_parser("race", help="Execute multi-candidate speculative branch race across parallel microVMs")
     p_rce.add_argument("--candidates-file", required=True, help="Path to JSON file containing patch candidates")
     p_rce.add_argument("--strategy", default="FASTEST_PASSING", choices=["FASTEST_PASSING", "LOWEST_LATENCY"], help="Winning candidate selection strategy")
     p_rce.set_defaults(func=cmd_race)
 
-    # 7e. nephis rewind (Point-in-time database rewind from WAL)
+    # 7e. ananke rewind (Point-in-time database rewind from WAL)
     p_rwd = subparsers.add_parser("rewind", help="Fork an isolated PostgreSQL database branch from historical WAL")
     p_rwd.add_argument("--lsn", default="16/B374D848", help="Target PostgreSQL WAL LSN")
     p_rwd.add_argument("--tenant", default="default", help="Tenant slug or organization ID")
     p_rwd.set_defaults(func=cmd_rewind)
 
-    # 8. nephis license (status|generate|verify)
-    p_lic = subparsers.add_parser("license", help="Nephis cryptographic license authority & tier status")
+    # 8. ananke license (status|generate|verify)
+    p_lic = subparsers.add_parser("license", help="Ananke cryptographic license authority & tier status")
     p_lic_sub = p_lic.add_subparsers(dest="action", required=True)
     p_lic_stat = p_lic_sub.add_parser("status", help="Display active license status and entitlements")
     p_lic_gen = p_lic_sub.add_parser("generate", help="Generate signed license token")
@@ -1326,7 +1326,7 @@ def main():
     p_lic_ver.add_argument("token", help="License token (ank_lic_...)")
     p_lic.set_defaults(func=cmd_license)
 
-    # 9. nephis cdc (inspect|bench) - Walquet
+    # 9. ananke cdc (inspect|bench) - Walquet
     p_cdc = subparsers.add_parser("cdc", help="Zero-JVM Postgres WAL to Parquet CDC (Walquet)")
     p_cdc_sub = p_cdc.add_subparsers(dest="cdc_action", required=True)
     p_cdc_ins = p_cdc_sub.add_parser("inspect", help="Inspect Parquet schema, rows, and metadata")
@@ -1336,14 +1336,14 @@ def main():
     p_cdc_bnc.add_argument("--batch-size", type=int, default=2000, help="Batch size")
     p_cdc.set_defaults(func=cmd_cdc)
 
-    # 10. nephis webhook (send) - HookQ
+    # 10. ananke webhook (send) - HookQ
     p_wh = subparsers.add_parser("webhook", help="High-throughput outbound webhooks with anti-SSRF firewall (HookQ)")
     p_wh.add_argument("--url", required=True, help="Target webhook URL")
     p_wh.add_argument("--payload", default='{"event":"test"}', help="JSON payload")
     p_wh.add_argument("--secret", default="webhook_secret", help="HMAC signing secret")
     p_wh.set_defaults(func=cmd_webhook)
 
-    # 11. nephis finops (scan|prune) - ZombiePrune
+    # 11. ananke finops (scan|prune) - ZombiePrune
     p_fin = subparsers.add_parser("finops", help="AWS zombie resource optimizer (ZombiePrune)")
     p_fin_sub = p_fin.add_subparsers(dest="finops_action", required=True)
     p_fin_scan = p_fin_sub.add_parser("scan", help="Scan for orphaned EBS, EIPs, and NATs")
@@ -1353,12 +1353,12 @@ def main():
     p_fin_prune.add_argument("--confirm", action="store_true", help="Confirm deletion")
     p_fin.set_defaults(func=cmd_finops)
 
-    # 12. nephis flight-record (inspect) - Tombstone
+    # 12. ananke flight-record (inspect) - Tombstone
     p_fr = subparsers.add_parser("flight-record", help="Pre-OOM diagnostic flight recorder (Tombstone)")
     p_fr.add_argument("file", help="Path to tombstone autopsy JSON file")
     p_fr.set_defaults(func=cmd_flight_record)
 
-    # 13. nephis chaos (run|replay) - Chronofault
+    # 13. ananke chaos (run|replay) - Chronofault
     p_ch = subparsers.add_parser("chaos", help="Deterministic discrete pseudo-time chaos hypervisor (Chronofault)")
     p_ch_sub = p_ch.add_subparsers(dest="chaos_action", required=True)
     p_ch_run = p_ch_sub.add_parser("run", help="Run chaos simulation with Raft consensus")
@@ -1370,7 +1370,7 @@ def main():
     p_ch_rep.add_argument("--seed", type=int, default=1337, help="PRNG Seed")
     p_ch.set_defaults(func=cmd_chaos)
 
-    # 14. nephis pool (probe|bench) - Sockpool
+    # 14. ananke pool (probe|bench) - Sockpool
     p_pl = subparsers.add_parser("pool", help="Client-side eBPF database connection pooler (Sockpool)")
     p_pl_sub = p_pl.add_subparsers(dest="pool_action", required=True)
     p_pl_prb = p_pl_sub.add_parser("probe", help="Inspect host eBPF sockmap capabilities")
@@ -1380,14 +1380,14 @@ def main():
     p_pl_bnc.add_argument("--queries", type=int, default=100, help="Queries per client")
     p_pl.set_defaults(func=cmd_pool)
 
-    # 15. nephis pipe (bench) - S3pipe
+    # 15. ananke pipe (bench) - S3pipe
     p_pip = subparsers.add_parser("pipe", help="Zero-copy S3 streaming pipe (S3pipe)")
     p_pip.add_argument("--size-mb", type=int, default=50, help="Payload size to stream in MB")
     p_pip.add_argument("--part-size-mb", type=int, default=8, help="Part size in MB")
     p_pip.add_argument("--concurrency", type=int, default=4, help="Upload workers")
     p_pip.set_defaults(func=cmd_pipe)
 
-    # 16. nephis rootfs (build-manifest|bench) - Nbdstream
+    # 16. ananke rootfs (build-manifest|bench) - Nbdstream
     p_rt = subparsers.add_parser("rootfs", help="Zero-download lazy rootfs streamer (Nbdstream)")
     p_rt_sub = p_rt.add_subparsers(dest="rootfs_action", required=True)
     p_rt_bm = p_rt_sub.add_parser("build-manifest", help="Build block manifest from image")
@@ -1399,7 +1399,7 @@ def main():
     p_rt_bnc.add_argument("--concurrency", type=int, default=15, help="Workers")
     p_rt.set_defaults(func=cmd_rootfs)
 
-    # 17. nephis dns (probe|bench) - Xdpdns
+    # 17. ananke dns (probe|bench) - Xdpdns
     p_dns = subparsers.add_parser("dns", help="Sub-microsecond ephemeral wildcard DNS (Xdpdns)")
     p_dns_sub = p_dns.add_subparsers(dest="dns_action", required=True)
     p_dns_prb = p_dns_sub.add_parser("probe", help="Inspect host XDP capabilities")
@@ -1409,7 +1409,7 @@ def main():
     p_dns_bnc.add_argument("--target", default="", help="Target address")
     p_dns.set_defaults(func=cmd_dns)
 
-    # 18. nephis live-migrate (probe|demo|bench) - Sockmig
+    # 18. ananke live-migrate (probe|demo|bench) - Sockmig
     p_mig = subparsers.add_parser("live-migrate", help="Live TCP socket migration & state transfer (Sockmig)")
     p_mig_sub = p_mig.add_subparsers(dest="mig_action", required=True)
     p_mig_prb = p_mig_sub.add_parser("probe", help="Inspect host TCP_REPAIR support")
@@ -1418,7 +1418,7 @@ def main():
     p_mig_bnc.add_argument("--sessions", type=int, default=10000, help="Sessions count")
     p_mig.set_defaults(func=cmd_live_migrate)
 
-    # 19. nephis bastion (token|audit) - Product 02 (db-bastion)
+    # 19. ananke bastion (token|audit) - Product 02 (db-bastion)
     p_bas = subparsers.add_parser("bastion", help="Zero-trust ephemeral DB bastion gateway (db-bastion)")
     p_bas_sub = p_bas.add_subparsers(dest="bastion_action", required=True)
     p_bas_tok = p_bas_sub.add_parser("token", help="Generate ephemeral signed DB token")
@@ -1429,7 +1429,7 @@ def main():
     p_bas_aud.add_argument("file", help="Audit log file path")
     p_bas.set_defaults(func=cmd_bastion)
 
-    # 20. nephis pki (issue|revoke) - Product 04 (acmeca)
+    # 20. ananke pki (issue|revoke) - Product 04 (acmeca)
     p_pki = subparsers.add_parser("pki", help="Turnkey internal PKI & RFC 8555 ACME CA (acmeca)")
     p_pki_sub = p_pki.add_subparsers(dest="pki_action", required=True)
     p_pki_iss = p_pki_sub.add_parser("issue", help="Issue internal TLS certificate")
@@ -1441,7 +1441,7 @@ def main():
     p_pki_rev.add_argument("--ca-dir", default="/tmp/ca_data", help="CA root data directory")
     p_pki.set_defaults(func=cmd_pki)
 
-    # 21. nephis compress (bench|finops) - Product 06 (azcomp)
+    # 21. ananke compress (bench|finops) - Product 06 (azcomp)
     p_cmp = subparsers.add_parser("compress", help="Cross-AZ wire compression & AWS FinOps optimizer (azcomp)")
     p_cmp_sub = p_cmp.add_subparsers(dest="compress_action", required=True)
     p_cmp_bnc = p_cmp_sub.add_parser("bench", help="Run compression engine benchmark")
@@ -1452,11 +1452,11 @@ def main():
     p_cmp_fin.add_argument("--ratio", type=float, default=0.80, help="Observed compression ratio (0.0 - 1.0)")
     p_cmp.set_defaults(func=cmd_compress)
 
-    # 22. nephis sockpass (probe) - Product 08 (sockpass)
+    # 22. ananke sockpass (probe) - Product 08 (sockpass)
     p_skp = subparsers.add_parser("sockpass", help="Zero-downtime socket handover supervisor (sockpass)")
     p_skp.set_defaults(func=cmd_sockpass)
 
-    # 23. nephis nvme (finops|bench) - Product 10 (nvmesh)
+    # 23. ananke nvme (finops|bench) - Product 10 (nvmesh)
     p_nvm = subparsers.add_parser("nvme", help="Ephemeral NVMe caching shim & EBS IOPS optimizer (nvmesh)")
     p_nvm_sub = p_nvm.add_subparsers(dest="nvme_action", required=True)
     p_nvm_fin = p_nvm_sub.add_parser("finops", help="Calculate EBS provisioned IOPS savings")
@@ -1469,7 +1469,7 @@ def main():
     p_nvm_bnc.add_argument("--ratio", type=float, default=0.90, help="Read ratio")
     p_nvm.set_defaults(func=cmd_nvme)
 
-    # 24. nephis reclaim (scan|bench) - Product 12 (memreclaim)
+    # 24. ananke reclaim (scan|bench) - Product 12 (memreclaim)
     p_rcl = subparsers.add_parser("reclaim", help="Out-of-band memory reclaimer (memreclaim)")
     p_rcl_sub = p_rcl.add_subparsers(dest="reclaim_action", required=True)
     p_rcl_scn = p_rcl_sub.add_parser("scan", help="Scan host container inactive memory")
@@ -1478,7 +1478,7 @@ def main():
     p_rcl_bnc.add_argument("--alloc-mb", type=int, default=128, help="Heap size in MB")
     p_rcl.set_defaults(func=cmd_reclaim)
 
-    # 25. nephis graynet (probe|simulate) - Product 14 (graynet)
+    # 25. ananke graynet (probe|simulate) - Product 14 (graynet)
     p_grn = subparsers.add_parser("graynet", help="Gray-failure network simulator (graynet)")
     p_grn_sub = p_grn.add_subparsers(dest="graynet_action", required=True)
     p_grn_prb = p_grn_sub.add_parser("probe", help="Probe host network stack capabilities")
@@ -1489,7 +1489,7 @@ def main():
     p_grn_sim.add_argument("--steps", type=int, default=20, help="Simulation steps")
     p_grn.set_defaults(func=cmd_graynet)
 
-    # 26. nephis ioarbiter (observe|bench) - Product 16 (ioarbiter)
+    # 26. ananke ioarbiter (observe|bench) - Product 16 (ioarbiter)
     p_ioa = subparsers.add_parser("ioarbiter", help="Dynamic NVMe I/O fair-share QoS arbiter (ioarbiter)")
     p_ioa_sub = p_ioa.add_subparsers(dest="arbiter_action", required=True)
     p_ioa_obs = p_ioa_sub.add_parser("observe", help="Sample host NVMe devices and queue depths")
@@ -1497,7 +1497,7 @@ def main():
     p_ioa_bnc.add_argument("--enforce", action="store_true", default=True, help="Enable dynamic clamping")
     p_ioa.set_defaults(func=cmd_ioarbiter)
 
-    # 27. nephis shmparse (warm|bench) - Product 18 (shmparse)
+    # 27. ananke shmparse (warm|bench) - Product 18 (shmparse)
     p_shm = subparsers.add_parser("shmparse", help="Shared-memory compiler pre-parser (shmparse)")
     p_shm_sub = p_shm.add_subparsers(dest="shm_action", required=True)
     p_shm_wrm = p_shm_sub.add_parser("warm", help="Pre-tokenize headers into /dev/shm")
@@ -1569,7 +1569,7 @@ def main():
     p_adm.set_defaults(func=cmd_admin)
 
     # 35. nephisctl multiverse (fork|replay)
-    p_mlt = subparsers.add_parser("multiverse", help="Nephis Deterministic Engine Titan 7 parallel multiverse timeline explorer")
+    p_mlt = subparsers.add_parser("multiverse", help="Kronos Titan 7 parallel multiverse timeline explorer")
     p_mlt_sub = p_mlt.add_subparsers(dest="multiverse_action", required=False)
     p_mlt_frk = p_mlt_sub.add_parser("fork", help="Fork parallel multiverse timelines")
     p_mlt_frk.add_argument("--timelines", type=int, default=50, help="Number of parallel timelines")

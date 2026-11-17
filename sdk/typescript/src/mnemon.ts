@@ -4,7 +4,7 @@
  * Provides native bindings for:
  *  - 31ms Zero-Copy XFS Reflink Branching
  *  - One-Click Schema Diff & Branch Reset (<50ms)
- *  - Continuous Point-in-Time Recovery (PITR) via Mnemon WAL Replay
+ *  - Continuous Point-in-Time Recovery (PITR) via Lethe WAL Replay
  *  - ParadeDB BM25 & PostgreSQL tsvector Full-Text Search
  *  - Managed PostgREST RESTful Data API Engine (/rest/v1/...)
  *  - Branching S3-Compatible Copy-on-Write Object Storage (/storage/v1/...)
@@ -169,16 +169,34 @@ export class MnemonClient {
   async branchDatabase(
     tenantId: string,
     newBranch: string,
-    parentBranch: string = "main"
+    options: string | { parentBranch?: string; maskPii?: boolean; targetLsn?: string } = "main"
   ): Promise<any> {
-    const payload = {
+    const parentBranch = typeof options === "string" ? options : (options.parentBranch ?? "main");
+    const maskPii = typeof options === "object" ? Boolean(options.maskPii) : false;
+    const targetLsn = typeof options === "object" ? options.targetLsn : undefined;
+
+    const payload: any = {
       tenant_id: tenantId,
       new_branch: newBranch,
       parent_branch: parentBranch,
+      mask_pii: maskPii,
     };
+    if (targetLsn) {
+      payload.target_lsn = targetLsn;
+    }
     const res = await this.request("POST", "/v1/tenants/branch", { body: payload });
     res.connection_string = this.getConnectionString(newBranch);
     return res;
+  }
+
+  async mergeBranch(
+    tenantId: string,
+    branchId: string,
+    parentBranch: string = "main"
+  ): Promise<{ status: string; duration_ms: number; fast_forward: boolean; migration_sql?: string }> {
+    return this.request("POST", "/v1/tenants/merge", {
+      body: { tenant_id: tenantId, branch_id: branchId, parent_branch: parentBranch },
+    });
   }
 
   async schemaDiff(
@@ -278,11 +296,18 @@ export class MnemonClient {
     return this.request("POST", `/rest/v1/${tenantId}/${table}`, { body: payload });
   }
 
-  async query(tenantId: string, sql: string): Promise<QueryResult> {
-    const payload = {
+  async query(
+    tenantId: string,
+    sql: string,
+    options: { asOfLsn?: string } = {}
+  ): Promise<QueryResult> {
+    const payload: any = {
       tenant_id: tenantId,
       query: sql,
     };
+    if (options.asOfLsn) {
+      payload.as_of_lsn = options.asOfLsn;
+    }
     return this.request<QueryResult>("POST", "/v1/tenants/sql", { body: payload });
   }
 

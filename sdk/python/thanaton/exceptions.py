@@ -58,8 +58,7 @@ class ThanatonConnectionError(ThanatonError):
     def __init__(self, url: str, reason: str):
         msg = (
             f"Cannot connect to Thanaton Daemon at {url} ({reason}).\n"
-            "  -> If running locally: Launch the daemon with 'nephisd' or 'python scripts/nephisd.py'\n"
-            "  -> If using managed cloud: Set base_url='https://nephis.theeducode.com/pricing' and api_key='sk_live_...'\n"
+            "  -> If using managed cloud: Set base_url='https://nephis.theeducode.com' and api_key='sk_live_...'\n"
             "  -> Quickstart guide: https://nephis.theeducode.com/docs"
         )
         super().__init__(msg)

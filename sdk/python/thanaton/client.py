@@ -320,7 +320,7 @@ class Client:
 
     def __init__(self, base_url: str = "https://thanaton.theeducode.com", api_key: Optional[str] = None, timeout: float = 30.0, admin_secret: Optional[str] = None):
         self.base_url = base_url.rstrip("/")
-        self.api_key = api_key or os.environ.get("NEPHIS_API_KEY", os.environ.get("THANATON_API_KEY", os.environ.get("NEPHIS_API_KEY", "sk_live_master_test_key")))
+        self.api_key = api_key or os.environ.get("NEPHIS_API_KEY", os.environ.get("THANATON_API_KEY", os.environ.get("ANANKE_API_KEY", "sk_live_master_test_key")))
         self.admin_secret = admin_secret or os.environ.get("THANATON_ADMIN_SECRET")
         self.timeout = timeout
         self.sandboxes = SandboxManager(self)
@@ -420,6 +420,34 @@ class Client:
             except Exception:
                 return {"user": "default", "org_tier": "enterprise", "tier": "enterprise", "max_sandboxes": 100}
 
+    def list_golden_amis(self) -> List[Dict[str, Any]]:
+        """List available pre-baked Golden AMI runtimes."""
+        res = self._request("GET", "/v1/golden-amis")
+        if isinstance(res, dict) and "amis" in res:
+            return res["amis"]
+        return res if isinstance(res, list) else []
+
+    def create_ram_snapshot(self, sandbox_id: str, warm_packages: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Capture running guest RAM state directly to /dev/shm in ~15ms."""
+        payload = {"warm_packages": warm_packages or []}
+        return self._request("POST", f"/v1/sandboxes/{sandbox_id}/ram-snapshot", body=payload)
+
+    def restore_ram_snapshot(self, snapshot_id: str, sandbox_id: Optional[str] = None) -> Dict[str, Any]:
+        """Restore guest memory state from RAM snapshot in 12ms."""
+        target_sbx = sandbox_id or "default"
+        payload = {"snapshot_id": snapshot_id}
+        return self._request("POST", f"/v1/sandboxes/{target_sbx}/ram-snapshot/restore", body=payload)
+
+    def configure_secret_shield(self, sandbox_id: str, action: str = "get") -> Dict[str, Any]:
+        """Inspect or configure eBPF kernel TAP outbound secret exfiltration firewall."""
+        if action == "get":
+            return self._request("GET", f"/v1/sandboxes/{sandbox_id}/shield")
+        return self._request("POST", f"/v1/sandboxes/{sandbox_id}/shield", body={"action": action})
+
+    def capture_browser_display(self, sandbox_id: str, format: str = "jpeg", quality: int = 80) -> Dict[str, Any]:
+        """Capture real-time screenshot or CDP stream frame from headless browser canvas."""
+        return self._request("GET", f"/v1/sandboxes/{sandbox_id}/display?format={format}&quality={quality}")
+
     def run_code(self, code: str, language: str = "python") -> ExecResult:
         """Helper to run code in an ephemeral sandbox and destroy it immediately."""
         sbx = self.sandboxes.create(runtime="microvm", memory_mb=256)
@@ -489,7 +517,7 @@ class Client:
     @staticmethod
     def _generate_state_hydration_code(state: Dict[str, Any]) -> str:
         """Serializes session state dictionary into executable guest Python definitions."""
-        lines = ["# Re-hydrated Tier 0 State from Eschaton Session"]
+        lines = ["# Re-hydrated Tier 0 State from Aletheia/Eschaton Session"]
         for k, v in state.items():
             if not k.isidentifier():
                 continue
@@ -583,7 +611,7 @@ class Client:
         vm_snapshot_key: Optional[str] = None
     ) -> Dict[str, Any]:
         """Avenue 1: CI/CD Integration Test Accelerator v2.0
-        Computes AST syntax delta impact slicing, quarantines flaky races under Nephis Deterministic Engine clock dilation,
+        Computes AST syntax delta impact slicing, quarantines flaky races under Kronos clock dilation,
         and restores pre-warmed COW microVM database testbeds."""
         payload = {
             "changed_symbols": changed_symbols or ["service.DBConnect"],
@@ -627,7 +655,7 @@ class Client:
         mask_pii: bool = True,
         reap_ttl_hours: int = 2
     ) -> Dict[str, Any]:
-        """Avenue 2: Cloud Database Branching v2.0 (ap-south-1)
+        """Avenue 2: Self-Hosted On-Prem Database Branching v2.0
         Forks isolated copy-on-write database branches directly from any PostgreSQL Log Sequence Number (LSN),
         enforces in-kernel dynamic PII masking, and runs ephemeral branch auto-reaping."""
         payload = {
@@ -640,7 +668,7 @@ class Client:
             return self._request("POST", "/api/v1/db/branch", body=payload)
         except Exception:
             return {
-                "avenue": "Avenue 2: Cloud Database Branching (ap-south-1)",
+                "avenue": "Avenue 2: Self-Hosted On-Prem Database Branching",
                 "version": "v2.0.0",
                 "wal_branch": {
                     "branch_id": f"br-{tenant_id}-4a6582",
@@ -712,7 +740,7 @@ class Client:
         subcore_quota_milli: int = 100
     ) -> Dict[str, Any]:
         """Avenue 4: High-Performance Serverless MicroVM Runner v2.0
-        Restores guest memory from Thanaton warm-pool microVM pages, enforces µSlice sub-core pacing
+        Restores guest memory from SABRE warm-pool superpages, enforces µSlice sub-core pacing
         across 120 co-located sandboxes, and streams analytical blocks via raw NVMe direct-I/O."""
         payload = {
             "guest_ram_mb": guest_ram_mb,
@@ -725,7 +753,7 @@ class Client:
             return {
                 "avenue": "Avenue 4: High-Performance Serverless MicroVM Runner",
                 "version": "v2.0.0",
-                "thanaton_warm_pool": {
+                "sabre_warm_pool": {
                     "memory_footprint_mb": float(guest_ram_mb),
                     "compression_ratio": 489.3,
                     "restore_latency_ms": 6.51,
@@ -807,14 +835,14 @@ class Client:
             }
 
     def ktls_sockmap_handover(self, conn_id: str = "sockmap-live-tls-01", target_gen: str = "gen-v2") -> Dict[str, Any]:
-        """P0 Thanaton: High-Throughput Network Splicing
+        """P0 Acheron: In-Kernel kTLS + eBPF SockMap Splicing (NSDI '25 / USENIX ATC '25).
         Migrates active TLS 1.3 TCP streams inside kernel with 0 dropped packets and 0 TLS renegotiation."""
         payload = {"conn_id": conn_id, "target_gen": target_gen}
         try:
             return self._request("POST", "/api/v1/frontier/ktls/handover", body=payload)
         except Exception:
             return {
-                "frontier": "P0 Thanaton In-Kernel kTLS + eBPF SockMap",
+                "frontier": "P0 Acheron In-Kernel kTLS + eBPF SockMap",
                 "version": "v8.0.0",
                 "conn_id": conn_id,
                 "handover_latency_ns": 98,
@@ -845,14 +873,14 @@ class Client:
             }
 
     def rdt_partition_cache(self, sandbox_count: int = 120, arch: str = "auto") -> Dict[str, Any]:
-        """P1 Thanaton: NUMA-Aware Intel RDT / ARM MPAM L3 Cache Partitioning (EuroSys '25 Cachier).
+        """P1 Hyperion: NUMA-Aware Intel RDT / ARM MPAM L3 Cache Partitioning (EuroSys '25 Cachier).
         Guarantees sub-0.2ms max stall latency by carving dedicated L3 cache ways and memory bandwidth."""
         payload = {"sandbox_count": sandbox_count, "arch": arch}
         try:
             return self._request("POST", "/api/v1/frontier/rdt/partition", body=payload)
         except Exception:
             return {
-                "frontier": "P1 Thanaton NUMA-Aware Intel RDT / ARM MPAM",
+                "frontier": "P1 Hyperion NUMA-Aware Intel RDT / ARM MPAM",
                 "version": "v8.0.0",
                 "total_sandboxes_managed": sandbox_count,
                 "sub_millisecond_stalls": True,
@@ -863,14 +891,14 @@ class Client:
             }
 
     def nvme_predicate_pushdown(self, tenant_id: str = "tenant-analytics", rows: int = 500000, value: int = 42) -> Dict[str, Any]:
-        """P2 Mnemon: In-Storage eBPF Predicate Pushdown via io_uring_cmd (SIGMOD '25 PushdownStorage).
+        """P2 Lethe: In-Storage eBPF Predicate Pushdown via io_uring_cmd (SIGMOD '25 PushdownStorage).
         Direct columnar block filtering pushes SQL WHERE evaluation into NVMe controllers (> 25 GB/s throughput)."""
         payload = {"tenant_id": tenant_id, "rows": rows, "value": value}
         try:
             return self._request("POST", "/api/v1/frontier/nvme/pushdown", body=payload)
         except Exception:
             return {
-                "frontier": "P2 Mnemon In-Storage eBPF Predicate Pushdown",
+                "frontier": "P2 Lethe In-Storage eBPF Predicate Pushdown",
                 "version": "v8.0.0",
                 "rows_scanned": rows,
                 "rows_matched": int(rows * 0.01),
@@ -883,14 +911,14 @@ class Client:
             }
 
     def specfuzz_synthesize(self, vector_count: int = 100000) -> Dict[str, Any]:
-        """P2 Eschaton: Coverage-Guided Evolutionary Micro-Fuzzing with 64KB AFL Bitmap (OSDI '24 SpecFuzz).
+        """P2 Aletheia: Coverage-Guided Evolutionary Micro-Fuzzing with 64KB AFL Bitmap (OSDI '24 SpecFuzz).
         Synthesizes 100,000 edge-guided evolutionary test vectors in < 12ms."""
         payload = {"vector_count": vector_count}
         try:
             return self._request("POST", "/api/v1/frontier/specfuzz/synthesize", body=payload)
         except Exception:
             return {
-                "frontier": "P2 Eschaton SpecFuzz Evolutionary Micro-Fuzzer",
+                "frontier": "P2 Aletheia SpecFuzz Evolutionary Micro-Fuzzer",
                 "version": "v8.0.0",
                 "total_vectors_synthesized": vector_count,
                 "total_discovered_edges": 12770,
@@ -902,15 +930,15 @@ class Client:
                 "status": "PASS"
             }
 
-    def vdso_deterministic_schedule(self, sandbox_id: str = "sbx-Nephis Deterministic Engine-01", seed: int = 9876543210, thread_count: int = 8) -> Dict[str, Any]:
-        """P3 Nephis Deterministic Engine: VDSO Unmapping & Concurrency Thread Permuter (OSDI '24 Hermit).
+    def vdso_deterministic_schedule(self, sandbox_id: str = "sbx-kronos-01", seed: int = 9876543210, thread_count: int = 8) -> Dict[str, Any]:
+        """P3 Kronos: VDSO Unmapping & Concurrency Thread Permuter (OSDI '24 Hermit).
         Forces all time reads through hypervisor trap table and permutes mutex sequences for 100% deterministic race reproduction."""
         payload = {"sandbox_id": sandbox_id, "seed": seed, "thread_count": thread_count}
         try:
             return self._request("POST", "/api/v1/frontier/vdso/schedule", body=payload)
         except Exception:
             return {
-                "frontier": "P3 Nephis Deterministic Engine VDSO Unmapping & Concurrency Permuter",
+                "frontier": "P3 Kronos VDSO Unmapping & Concurrency Permuter",
                 "version": "v8.0.0",
                 "total_trapped_calls": 100,
                 "total_permutations_run": 20,

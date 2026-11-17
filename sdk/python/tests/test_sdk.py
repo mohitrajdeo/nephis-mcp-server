@@ -206,6 +206,38 @@ class MockThanatonHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(resp).encode("utf-8"))
             return
 
+        if "/ram-snapshot/restore" in self.path:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "status": "restored",
+                "snapshot_id": body.get("snapshot_id", "ram-snap-1"),
+                "restore_time_ms": 11.8,
+            }).encode("utf-8"))
+            return
+
+        if "/ram-snapshot" in self.path:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "snapshot_id": "ram-snap-1",
+                "dump_time_ms": 14.5,
+                "warm_packages": body.get("warm_packages", []),
+            }).encode("utf-8"))
+            return
+
+        if "/shield" in self.path:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "status": "configured",
+                "action": body.get("action", "enable"),
+            }).encode("utf-8"))
+            return
+
         self.send_response(404)
         self.end_headers()
 
@@ -295,6 +327,43 @@ class MockThanatonHandler(BaseHTTPRequestHandler):
                 "last_active_at": "2026-11-01T12:00:00Z"
             }
             self.wfile.write(json.dumps(resp).encode("utf-8"))
+            return
+
+        if self.path == "/v1/golden-amis":
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "amis": [
+                    {"id": "ami-node22", "runtime": "node22"},
+                    {"id": "ami-python312", "runtime": "python312"},
+                    {"id": "ami-golang122", "runtime": "golang122"},
+                    {"id": "ami-nextjs", "runtime": "nextjs"}
+                ]
+            }).encode("utf-8"))
+            return
+
+        if "/shield" in self.path:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "sandbox_id": "sbx_py_test_1",
+                "status": "active",
+                "filter_attached": True
+            }).encode("utf-8"))
+            return
+
+        if "/display" in self.path:
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "sandbox_id": "sbx_py_test_1",
+                "format": "jpeg",
+                "quality": 80,
+                "data": "fake-jpeg-base64-data"
+            }).encode("utf-8"))
             return
 
         self.send_response(404)
@@ -412,8 +481,7 @@ class TestThanatonSDK(unittest.TestCase):
             unreachable_client.sandboxes.list()
         err_msg = str(ctx.exception)
         self.assertIn("Cannot connect to Thanaton Daemon", err_msg)
-        self.assertIn("Launch the daemon with 'nephisd'", err_msg)
-        self.assertIn("Set base_url='https://nephis.theeducode.com/pricing'", err_msg)
+        self.assertIn("Set base_url='https://nephis.theeducode.com'", err_msg)
 
     def test_escalation_required_exception(self):
         exc = thanaton.EscalationRequiredException(
@@ -558,6 +626,45 @@ class TestThanatonSDK(unittest.TestCase):
         res = self.client.batch_execute(source_code="print(1)", tests=[{"stdin": "1", "expected_output": "1"}], suite="Omni")
         self.assertEqual(len(res["Results"]), 1)
         self.assertTrue(res["Results"][0]["passed"])
+
+    def test_thanaton_v107_features(self):
+        # 1. Golden AMIs
+        amis = self.client.list_golden_amis()
+        self.assertEqual(len(amis), 4)
+        self.assertEqual(amis[0]["id"], "ami-node22")
+
+        # 2. RAM Snapshot create & restore
+        snap = self.client.create_ram_snapshot("sbx_py_test_1", warm_packages=["numpy", "pandas"])
+        self.assertEqual(snap["snapshot_id"], "ram-snap-1")
+        self.assertAlmostEqual(snap["dump_time_ms"], 14.5)
+
+        res_restore = self.client.restore_ram_snapshot("ram-snap-1", sandbox_id="sbx_py_test_1")
+        self.assertEqual(res_restore["status"], "restored")
+        self.assertAlmostEqual(res_restore["restore_time_ms"], 11.8)
+
+        # 3. Secret Exfiltration Shield
+        shield_info = self.client.configure_secret_shield("sbx_py_test_1", action="get")
+        self.assertEqual(shield_info["status"], "active")
+        self.assertTrue(shield_info["filter_attached"])
+
+        shield_enable = self.client.configure_secret_shield("sbx_py_test_1", action="enable")
+        self.assertEqual(shield_enable["status"], "configured")
+
+        # 4. Browser Display Canvas Capture
+        disp = self.client.capture_browser_display("sbx_py_test_1", format="jpeg", quality=80)
+        self.assertEqual(disp["format"], "jpeg")
+        self.assertEqual(disp["data"], "fake-jpeg-base64-data")
+
+        # 5. Sandbox instance delegated methods
+        sbx = self.client.sandboxes.get("sbx_py_test_1")
+        sbx_snap = sbx.create_ram_snapshot(warm_packages=["next"])
+        self.assertEqual(sbx_snap["snapshot_id"], "ram-snap-1")
+        sbx_res = sbx.restore_ram_snapshot("ram-snap-1")
+        self.assertEqual(sbx_res["status"], "restored")
+        sbx_shield = sbx.configure_secret_shield(action="get")
+        self.assertTrue(sbx_shield["filter_attached"])
+        sbx_disp = sbx.capture_browser_display(format="jpeg")
+        self.assertEqual(sbx_disp["format"], "jpeg")
 
 
 if __name__ == "__main__":

@@ -129,7 +129,7 @@ def test_detect_rust_project():
     with tempfile.TemporaryDirectory() as tmpdir:
         root = Path(tmpdir)
         cargo_toml = """[package]
-name = "Thanaton-agent"
+name = "hyperion-agent"
 version = "0.1.0"
 edition = "2021"
 

@@ -47,7 +47,7 @@ class MnemonClient:
     Supports:
       - 31ms Zero-Copy XFS Reflink Branching
       - One-Click Schema Diff & Branch Reset (<50ms)
-      - Continuous Point-in-Time Recovery (PITR) via Mnemon WAL Replay
+      - Continuous Point-in-Time Recovery (PITR) via Lethe WAL Replay
       - ParadeDB BM25 & PostgreSQL tsvector Full-Text Search
       - Managed PostgREST RESTful Data API Engine (/rest/v1/...)
       - Branching S3-Compatible Copy-on-Write Object Storage (/storage/v1/...)
@@ -117,13 +117,23 @@ class MnemonClient:
         data["connection_string"] = self.get_connection_string(tenant_id)
         return data
 
-    def branch_database(self, tenant_id: str, new_branch: str, parent_branch: str = "main") -> Dict[str, Any]:
-        """Create an instant block-level Copy-on-Write (CoW) database branch in <50ms."""
-        payload = {
+    def branch_database(
+        self,
+        tenant_id: str,
+        new_branch: str,
+        parent_branch: str = "main",
+        mask_pii: bool = False,
+        target_lsn: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Create an instant block-level Copy-on-Write (CoW) database branch in <50ms, with optional PII masking."""
+        payload: Dict[str, Any] = {
             "tenant_id": tenant_id,
             "new_branch": new_branch,
             "parent_branch": parent_branch,
+            "mask_pii": mask_pii,
         }
+        if target_lsn:
+            payload["target_lsn"] = target_lsn
         resp = requests.post(
             f"{self.api_url}/v1/tenants/branch",
             json=payload,
@@ -135,6 +145,28 @@ class MnemonClient:
         data = resp.json()
         data["connection_string"] = self.get_connection_string(new_branch)
         return data
+
+    def merge_branch(
+        self,
+        tenant_id: str,
+        branch_id: str,
+        parent_branch: str = "main",
+    ) -> Dict[str, Any]:
+        """Fast-forward merge schema migrations from a branch back to parent trunk in <200ms."""
+        payload = {
+            "tenant_id": tenant_id,
+            "branch_id": branch_id,
+            "parent_branch": parent_branch,
+        }
+        resp = requests.post(
+            f"{self.api_url}/v1/tenants/merge",
+            json=payload,
+            headers=self._headers(),
+            timeout=30,
+        )
+        if not resp.ok:
+            raise MnemonException(f"Merge failed: {resp.text}")
+        return resp.json()
 
     def schema_diff(self, tenant_id: str, branch_id: str, parent_branch: str = "main") -> Dict[str, Any]:
         """Calculate schema diff and generate migration DDL between a branch and its parent."""
@@ -172,7 +204,7 @@ class MnemonClient:
     def time_travel(
         self, tenant_id: str, new_branch: str, target_time: str, parent_branch: str = "main"
     ) -> Dict[str, Any]:
-        """Continuous Point-in-Time Recovery: spawn a new branch from a historical timestamp via Mnemon WAL replay."""
+        """Continuous Point-in-Time Recovery: spawn a new branch from a historical timestamp via Lethe WAL replay."""
         payload = {
             "tenant_id": tenant_id,
             "new_branch": new_branch,
@@ -255,12 +287,16 @@ class MnemonClient:
             raise MnemonException(f"PostgREST insert failed: {resp.text}")
         return resp.json()
 
-    def query(self, tenant_id: str, sql: str) -> QueryResult:
-        """Execute arbitrary SQL statement against a tenant database with automatic transparent unfreeze."""
-        payload = {
+    def query(self, tenant_id: str, sql: str, as_of_lsn: Optional[str] = None) -> QueryResult:
+        """Execute arbitrary SQL statement against a tenant database with automatic transparent unfreeze.
+        Supports inline historical time-travel query when as_of_lsn is specified.
+        """
+        payload: Dict[str, Any] = {
             "tenant_id": tenant_id,
             "query": sql,
         }
+        if as_of_lsn:
+            payload["as_of_lsn"] = as_of_lsn
         resp = requests.post(
             f"{self.api_url}/v1/tenants/sql",
             json=payload,
@@ -434,7 +470,7 @@ class MnemonClient:
         return resp.json()
 
     def get_cdc_stats(self, tenant_id: str) -> Dict[str, Any]:
-        """Fetch live Mnemon CDC buffer and throughput performance statistics."""
+        """Fetch live Lethe CDC buffer and throughput performance statistics."""
         resp = requests.get(
             f"{self.api_url}/v1/projects/{tenant_id}/cdc/stats",
             headers=self._headers(),
@@ -452,7 +488,7 @@ class MnemonClient:
         record: Dict[str, Any],
         old_record: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Publish a database row mutation directly to Mnemon CDC stream."""
+        """Publish a database row mutation directly to Lethe CDC stream."""
         payload = {
             "table": table,
             "action": action.upper(),

@@ -6,23 +6,15 @@ Provides native bindings for microVM sandboxing, deterministic storage, and spec
 import os
 from typing import Optional, Dict, Any, List
 
-from nephis import *
-from nephis import __version__ as __upstream_version__
-from nephis.client import Client as UpstreamClient
-from nephis.exceptions import (
-    NephisError,
-    NephisConnectionError,
+from thanaton.client import Client as ThanatonClient, Sandbox as ThanatonSandbox
+from thanaton.exceptions import (
+    ThanatonError,
+    ThanatonConnectionError,
     APIError,
     ExecutionTimeoutError,
     SandboxNotFoundError,
     SQLError,
     EscalationRequiredException,
-)
-from nephis.license import (
-    LicenseAuthority as UpstreamLicenseAuthority,
-    LicenseToken,
-    LicenseError,
-    TIERS,
 )
 
 from nephis.auth import (
@@ -33,7 +25,7 @@ from nephis.auth import (
     save_credentials,
 )
 
-__version__ = "1.0.0-PROD"
+__version__ = "1.0.2"
 
 class AdminManager:
     """Cluster administration & emergency security killswitch manager."""
@@ -148,13 +140,12 @@ class ResearchManager:
         }
 
 
-class NephisClient(UpstreamClient):
+class NephisClient(ThanatonClient):
     """NEPHIS Cloud Platform Client with multi-dock support and alias bridges."""
-    def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, license_key: Optional[str] = None, timeout: int = 30):
+    def __init__(self, base_url: Optional[str] = None, api_key: Optional[str] = None, timeout: float = 30.0):
         resolved_base_url = resolve_base_url(base_url)
         resolved_api_key = resolve_api_key(api_key, base_url=resolved_base_url)
-        resolved_license_key = license_key or os.environ.get("NEPHIS_LICENSE_KEY", os.environ.get("CIEL_LICENSE_KEY", os.environ.get("NEPHIS_LICENSE_KEY")))
-        super().__init__(base_url=resolved_base_url, api_key=resolved_api_key, license_key=resolved_license_key, timeout=timeout)
+        super().__init__(base_url=resolved_base_url, api_key=resolved_api_key, timeout=timeout)
         self.admin = AdminManager(self)
         self.specbox = SpecBoxManager(self)
         self.ozz = OZZManager(self)
@@ -215,51 +206,16 @@ class NephisClient(UpstreamClient):
                 "notice": str(e)
             }
 
-    @property
-    def live_migration(self):
-        return self.migration
 
-    @property
-    def graynet(self):
-        return self.net_chaos
-
-    @property
-    def io_arbiter(self):
-        return self.nvme_arbiter
-
-    @property
-    def shm_compiler(self):
-        return self.preparse_shm
-
-
-class NephisLicenseAuthority(UpstreamLicenseAuthority):
-    """NEPHIS Licensing Authority with dual token / license_key keyword support."""
-    def __init__(self, token: Optional[str] = None, license_key: Optional[str] = None, secret: str = 'nephis_enterprise_signing_secret_prod_2026'):
-        tok = token or license_key
-        super().__init__(token=tok, secret=secret)
-
-
-# Canonical NEPHIS & Compatibility Aliases
+# Canonical NEPHIS aliases
 Client = NephisClient
-CielClient = NephisClient
-NephisClient = NephisClient
-LicenseAuthority = NephisLicenseAuthority
-CielLicenseAuthority = NephisLicenseAuthority
-NephisError = NephisError
-CielError = NephisError
-NephisConnectionError = NephisConnectionError
-CielConnectionError = NephisConnectionError
+NephisError = ThanatonError
+NephisConnectionError = ThanatonConnectionError
 NephisAPIError = APIError
-CielAPIError = APIError
 
 # Try optional sub-engine imports for unified convenience
 try:
     from mnemon import MnemonClient, TenantStatus, QueryResult, MnemonException
-except ImportError:
-    pass
-
-try:
-    from thanaton import Client as ThanatonClient, Sandbox as ThanatonSandbox
 except ImportError:
     pass
 
@@ -271,19 +227,13 @@ except ImportError:
 __all__ = [
     "NephisClient",
     "Client",
-    "CielClient",
-    "NephisClient",
+    "ThanatonClient",
+    "ThanatonSandbox",
     "EschatonClient",
     "EschatonError",
-    "LicenseAuthority",
-    "NephisLicenseAuthority",
-    "CielLicenseAuthority",
     "NephisError",
-    "CielError",
     "NephisConnectionError",
-    "CielConnectionError",
     "NephisAPIError",
-    "CielAPIError",
     "AdminManager",
     "SpecBoxManager",
     "OZZManager",

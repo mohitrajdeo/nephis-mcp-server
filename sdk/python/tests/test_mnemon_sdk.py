@@ -149,7 +149,7 @@ def test_rest_query(mock_get):
 
 @patch("requests.post")
 @patch("requests.get")
-def test_mnemon_cdc(mock_get, mock_post):
+def test_lethe_cdc(mock_get, mock_post):
     # Mock CDC publish
     mock_post_resp = MagicMock()
     mock_post_resp.ok = True
@@ -266,6 +266,64 @@ def test_mnemon_admin_and_scaling(mock_get, mock_post):
     mock_get.return_value = mock_get_ip
     res = client.get_ip_allowlist("prj_1")
     assert "10.0.0.0/8" in res["cidrs"]
+
+
+@patch("requests.post")
+def test_mnemon_v107_features(mock_post):
+    client = MnemonClient(api_url="http://localhost:9090", api_key="nephis_live_test")
+
+    # 1. PII Masking & LSN Branching
+    mock_post.return_value.ok = True
+    mock_post.return_value.json.return_value = {
+        "status": "branched",
+        "branch_id": "feat_pii",
+        "mask_pii": True,
+        "target_lsn": "0/16B3740",
+    }
+    res_branch = client.branch_database(
+        tenant_id="tenant_alpha",
+        new_branch="feat_pii",
+        mask_pii=True,
+        target_lsn="0/16B3740",
+    )
+    assert res_branch["mask_pii"] is True
+    assert res_branch["branch_id"] == "feat_pii"
+    mock_post.assert_called_with(
+        "http://localhost:9090/v1/tenants/branch",
+        json={"tenant_id": "tenant_alpha", "new_branch": "feat_pii", "parent_branch": "main", "mask_pii": True, "target_lsn": "0/16B3740"},
+        headers=client._headers(),
+        timeout=30,
+    )
+
+    # 2. Fast-Forward Branch Merge
+    mock_post.return_value.json.return_value = {
+        "status": "merged",
+        "merged_tables": 3,
+        "target_branch": "main",
+    }
+    res_merge = client.merge_branch(
+        tenant_id="tenant_alpha",
+        branch_id="feat_pii",
+        parent_branch="main",
+    )
+    assert res_merge["status"] == "merged"
+    assert res_merge["merged_tables"] == 3
+
+    # 3. Inline Time-Travel SQL Querying
+    mock_post.return_value.json.return_value = {
+        "output": "[{\"id\": 1, \"balance\": 500}]",
+        "duration_ms": 14.2,
+    }
+    res_query = client.query(
+        tenant_id="tenant_alpha",
+        sql="SELECT * FROM balances WHERE id = 1;",
+        as_of_lsn="0/16B3740",
+    )
+    assert res_query.output == "[{\"id\": 1, \"balance\": 500}]"
+    assert res_query.duration_ms == 14.2
+    call_args = mock_post.call_args
+    assert call_args[1]["json"]["as_of_lsn"] == "0/16B3740"
+
 
 
 

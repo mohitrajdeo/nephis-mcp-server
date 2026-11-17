@@ -28,7 +28,7 @@ def resolve_base_url(override: Optional[str] = None) -> str:
         if url != "http://127.0.0.1:8080":
             return url
 
-    for env_var in ("NEPHIS_BASE_URL", "NEPHIS_API_URL", "CIEL_BASE_URL", "THANATON_BASE_URL", "NEPHIS_BASE_URL"):
+    for env_var in ("NEPHIS_BASE_URL", "NEPHIS_API_URL", "CIEL_BASE_URL", "THANATON_BASE_URL", "ANANKE_BASE_URL"):
         val = os.environ.get(env_var)
         if val and val.strip():
             url = val.strip().rstrip("/")
@@ -106,6 +106,61 @@ def solve_pow(challenge_nonce: str, machine_signature: str, difficulty: int = 4)
     raise RuntimeError("Failed to solve Proof-of-Work challenge within iteration bounds")
 
 
+def resolve_developer_identity() -> tuple[str, str]:
+    """
+    Resolve developer/agent name and deliverable contact email.
+    Checks environment variables -> local git configuration -> interactive prompt (if TTY).
+    """
+    name = os.environ.get("NEPHIS_NAME") or os.environ.get("NEPHIS_DEVELOPER_NAME") or os.environ.get("CIEL_NAME") or ""
+    email = os.environ.get("NEPHIS_EMAIL") or os.environ.get("NEPHIS_DEVELOPER_EMAIL") or os.environ.get("CIEL_EMAIL") or ""
+
+    name = name.strip()
+    email = email.strip()
+
+    if not name or not email:
+        try:
+            import subprocess
+            if not name:
+                git_name = subprocess.check_output(
+                    ["git", "config", "user.name"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                    timeout=2
+                ).strip()
+                if git_name:
+                    name = git_name
+            if not email:
+                git_email = subprocess.check_output(
+                    ["git", "config", "user.email"],
+                    text=True,
+                    stderr=subprocess.DEVNULL,
+                    timeout=2
+                ).strip()
+                if git_email:
+                    email = git_email
+        except Exception:
+            pass
+
+    if (not name or not email) and sys.stdin.isatty():
+        try:
+            if not name:
+                name = input("Enter developer/agent name for Nephis key claim: ").strip()
+            if not email:
+                email = input("Enter reachable contact email (e.g. Gmail) to receive key and alerts: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            pass
+
+    if not name:
+        name = socket.gethostname() or "Nephis Agent"
+    if not email:
+        raise RuntimeError(
+            "Nephis API key claim requires a contact email and name so credentials and alerts can be delivered. "
+            "Please set NEPHIS_EMAIL and NEPHIS_NAME environment variables or configure 'git config user.email' / 'git config user.name'."
+        )
+
+    return name, email
+
+
 def bootstrap_agent_key(base_url: Optional[str] = None) -> Dict[str, Any]:
     """Execute zero-human bootstrap: fetch challenge, solve Hashcash PoW, claim key, save creds."""
     canonical_url = resolve_base_url(base_url)
@@ -135,13 +190,18 @@ def bootstrap_agent_key(base_url: Optional[str] = None) -> Dict[str, Any]:
     # 3. Solve Hashcash
     sol = solve_pow(nonce, sig, difficulty)
 
-    # 4. Claim Agent Key
+    # 4. Resolve Developer / Agent Identity
+    name, email = resolve_developer_identity()
+
+    # 5. Claim Agent Key
     claim_url = f"{canonical_url}/v1/auth/claim-agent-key"
     payload = json.dumps({
         "challenge_nonce": nonce,
         "solution_nonce": sol,
         "machine_signature": sig,
-        "client_version": "1.0.0",
+        "client_version": "1.0.2",
+        "name": name,
+        "email": email,
     }).encode("utf-8")
 
     claim_req = urllib.request.Request(
@@ -189,7 +249,7 @@ def resolve_api_key(override: Optional[str] = None, base_url: Optional[str] = No
     """
     Resolve API Key strictly following precedence:
     1. Direct override
-    2. NEPHIS_API_KEY -> CIEL_API_KEY -> THANATON_API_KEY (also NEPHIS_API_KEY)
+    2. NEPHIS_API_KEY -> CIEL_API_KEY -> THANATON_API_KEY (also ANANKE_API_KEY)
     3. ~/.nephis/credentials.json
     4. Autonomous zero-human bootstrap PoW claim
     """
@@ -197,7 +257,7 @@ def resolve_api_key(override: Optional[str] = None, base_url: Optional[str] = No
         return override.strip()
 
     # 1. Environment variables
-    for env_var in ("NEPHIS_API_KEY", "CIEL_API_KEY", "THANATON_API_KEY", "NEPHIS_API_KEY"):
+    for env_var in ("NEPHIS_API_KEY", "CIEL_API_KEY", "THANATON_API_KEY", "ANANKE_API_KEY"):
         val = os.environ.get(env_var)
         if val and val.strip():
             return val.strip()

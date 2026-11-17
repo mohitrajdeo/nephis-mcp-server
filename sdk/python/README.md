@@ -318,4 +318,4 @@ def nephis_code_sandbox(code: str) -> str:
 * **GitHub:** [https://github.com/mohitrajdeo](https://github.com/mohitrajdeo)
 * **LinkedIn:** [https://www.linkedin.com/in/mohitrajdeo/](https://www.linkedin.com/in/mohitrajdeo/)
 * **Contact:** [mohit@mohitrajdeo.in](mailto:mohit@mohitrajdeo.in)
-* **Organization:** NEPHIS
+* **Organization:** NEPHIS / Eduniketan Private Limited

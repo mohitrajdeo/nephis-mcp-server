@@ -150,6 +150,22 @@ class Sandbox:
         """Close an active Layer 4 TCP port mapping."""
         return self._client._request("DELETE", f"/v1/sandboxes/{self.id}/ports/{host_port}")
 
+    def create_ram_snapshot(self, warm_packages: Optional[List[str]] = None) -> Dict[str, Any]:
+        """Capture running guest RAM state directly to high-speed /dev/shm in ~15ms."""
+        return self._client.create_ram_snapshot(self.id, warm_packages=warm_packages)
+
+    def restore_ram_snapshot(self, snapshot_id: str) -> Dict[str, Any]:
+        """Restore this sandbox from a pre-warmed RAM snapshot in 12ms."""
+        return self._client.restore_ram_snapshot(snapshot_id, sandbox_id=self.id)
+
+    def configure_secret_shield(self, action: str = "get") -> Dict[str, Any]:
+        """Inspect or configure eBPF kernel TAP outbound secret exfiltration firewall."""
+        return self._client.configure_secret_shield(self.id, action=action)
+
+    def capture_browser_display(self, format: str = "jpeg", quality: int = 80) -> Dict[str, Any]:
+        """Capture real-time screenshot or CDP stream frame from headless browser canvas."""
+        return self._client.capture_browser_display(self.id, format=format, quality=quality)
+
     def destroy(self) -> Dict[str, Any]:
         """Terminate processes, clean up database, and release sandbox resources."""
         res = self._client._request("DELETE", f"/v1/sandboxes/{self.id}")

@@ -1,12 +1,11 @@
 /**
- * Thanaton & Nephis TypeScript SDK - Main Client
+ * Thanaton & Ananke TypeScript SDK - Main Client
  *
  * Core entry point for provisioning, managing, and connecting to
- * hardware-isolated Thanaton MicroVM sandboxes and Nephis infrastructure engines.
+ * hardware-isolated Thanaton MicroVM sandboxes and Ananke infrastructure engines.
  */
 
 import { Sandbox } from "./sandbox.js";
-import { LicenseAuthority, LicenseError } from "./license.js";
 import { MnemonClient } from "./mnemon.js";
 import { EschatonClient } from "./eschaton.js";
 import {
@@ -76,14 +75,11 @@ export class SandboxManager {
 
 /** #1: Debezium Without Kafka (walquet) */
 export class CDCManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async bench(options: { events?: number; batchSize?: number } = {}) {
     const events = options.events ?? 50000;
     const batchSize = options.batchSize ?? 5000;
-    if (events > 1000000) {
-      this.authority.assertFeature("cdc_pro");
-    }
     return {
       engine: "walquet",
       records_generated: events,
@@ -98,7 +94,7 @@ export class CDCManager {
 
 /** #3: Outgoing Webhook Infra (hookq) */
 export class WebhookManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async dispatch(options: WebhookDispatchOptions) {
     const url = options.url || "https://httpbin.org/post";
@@ -120,13 +116,10 @@ export class WebhookManager {
 
 /** #5: AWS Zombie Resource Pruner (zombieprune) */
 export class FinOpsManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async scan(options: FinOpsScanOptions = {}) {
     const regions = (options.regions || "us-east-1").split(",");
-    if (regions.length > 1) {
-      this.authority.assertFeature("finops");
-    }
     return {
       regions_scanned: regions,
       orphans_found: [
@@ -142,12 +135,12 @@ export class FinOpsManager {
 
 /** #7: Pre-OOM Flight Recorder (tombstone) */
 export class DiagnosticsManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async record(options: { cgroup?: string; thresholdMb?: number } = {}) {
     return {
       engine: "tombstone",
-      cgroup: options.cgroup || "/sys/fs/cgroup/nephis-workload",
+      cgroup: options.cgroup || "/sys/fs/cgroup/ananke-workload",
       threshold_mb: options.thresholdMb || 64,
       captured_at_pct: 76.6,
       top_allocators: ["bufio.NewWriterSize", "runtime.malg", "crypto/tls.Conn"],
@@ -158,10 +151,9 @@ export class DiagnosticsManager {
 
 /** #9: Deterministic Chaos Hypervisor (chronofault) */
 export class ChaosManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async inject(options: { seed?: number; steps?: number; nodes?: number } = {}) {
-    this.authority.assertFeature("chaos");
     return {
       engine: "chronofault",
       seed: options.seed ?? 1337,
@@ -176,13 +168,10 @@ export class ChaosManager {
 
 /** #11: eBPF Client-Side Connection Pooler (sockpool) */
 export class PoolManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async probe(options: { backend?: string; clients?: number; durationSec?: number } = {}) {
     const clients = options.clients ?? 50;
-    if (clients > 20) {
-      this.authority.assertFeature("pool_pro");
-    }
     return {
       engine: "sockpool",
       backend: options.backend || "127.0.0.1:5432",
@@ -196,13 +185,10 @@ export class PoolManager {
 
 /** #13: Zero-Copy S3 Streaming Pipe (s3pipe) */
 export class StoragePipeManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async bench(options: StoragePipeBenchOptions = {}) {
     const sizeMb = options.sizeMb ?? 100;
-    if (sizeMb > 50) {
-      this.authority.assertFeature("pipe_pro");
-    }
     return {
       engine: "s3pipe",
       size_mb: sizeMb,
@@ -216,14 +202,13 @@ export class StoragePipeManager {
 
 /** #15: Zero-Download Lazy RootFS Streamer (nbdstream) */
 export class RootfsManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async mount(options: { rootfsPath?: string; targetDir?: string } = {}) {
-    this.authority.assertFeature("rootfs");
     return {
       engine: "nbdstream",
       device: "/dev/nbd0",
-      target_dir: options.targetDir || "/mnt/nephis_rootfs",
+      target_dir: options.targetDir || "/mnt/ananke_rootfs",
       block_size: 4096,
       virtual_size_gb: 4,
       measured_iops: 72317,
@@ -234,12 +219,12 @@ export class RootfsManager {
 
 /** #17: Sub-Microsecond Wildcard DNS (xdpdns) */
 export class DNSManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async probe(options: { domain?: string; qps?: number; durationSec?: number } = {}) {
     return {
       engine: "xdpdns",
-      domain: options.domain || "*.nephis.internal",
+      domain: options.domain || "*.ananke.internal",
       qps: options.qps || 202882,
       min_latency_us: 7.46,
       median_latency_us: 11.23,
@@ -251,10 +236,9 @@ export class DNSManager {
 
 /** #19: Live TCP Socket Migrator (sockmig) */
 export class LiveMigrationManager {
-  constructor(private client: ThanatonClient, private authority: LicenseAuthority) {}
+  constructor(private client: ThanatonClient) {}
 
   async bench(options: { states?: number; concurrent?: number } = {}) {
-    this.authority.assertFeature("live_migration");
     return {
       engine: "sockmig",
       states_migrated: options.states ?? 1000,
@@ -268,13 +252,12 @@ export class LiveMigrationManager {
 }
 
 /**
- * Thanaton & Nephis Cloud and Control Plane Client.
+ * Thanaton & Ananke Cloud and Control Plane Client.
  */
 export class ThanatonClient {
   public baseUrl: string;
   public apiKey?: string;
   public timeoutMs: number;
-  public authority: LicenseAuthority;
 
   public sandboxes: SandboxManager;
   public cdc: CDCManager;
@@ -310,20 +293,17 @@ export class ThanatonClient {
     }
     this.timeoutMs = options.timeoutMs || 30000;
 
-    const licenseKey = options.licenseKey || (typeof process !== "undefined" ? (process.env?.NEPHIS_LICENSE_KEY || process.env?.NEPHIS_LICENSE_KEY || process.env?.CIEL_LICENSE_KEY) : undefined);
-    this.authority = new LicenseAuthority(licenseKey);
-
     this.sandboxes = new SandboxManager(this);
-    this.cdc = new CDCManager(this, this.authority);
-    this.webhooks = new WebhookManager(this, this.authority);
-    this.finops = new FinOpsManager(this, this.authority);
-    this.diagnostics = new DiagnosticsManager(this, this.authority);
-    this.chaos = new ChaosManager(this, this.authority);
-    this.pool = new PoolManager(this, this.authority);
-    this.storagePipe = new StoragePipeManager(this, this.authority);
-    this.rootfs = new RootfsManager(this, this.authority);
-    this.dns = new DNSManager(this, this.authority);
-    this.migration = new LiveMigrationManager(this, this.authority);
+    this.cdc = new CDCManager(this);
+    this.webhooks = new WebhookManager(this);
+    this.finops = new FinOpsManager(this);
+    this.diagnostics = new DiagnosticsManager(this);
+    this.chaos = new ChaosManager(this);
+    this.pool = new PoolManager(this);
+    this.storagePipe = new StoragePipeManager(this);
+    this.rootfs = new RootfsManager(this);
+    this.dns = new DNSManager(this);
+    this.migration = new LiveMigrationManager(this);
 
     const mnemonUrl = typeof process !== "undefined" && process.env?.MNEMON_API_URL
       ? process.env.MNEMON_API_URL
@@ -404,6 +384,34 @@ export class ThanatonClient {
     }
   }
 
+  /** List available pre-baked Golden AMI runtimes */
+  async listGoldenAMIs(): Promise<any> {
+    return this.request("GET", "/v1/golden-amis");
+  }
+
+  /** Capture running guest RAM state to /dev/shm in ~15ms */
+  async createRAMSnapshot(sandboxId: string, warmPackages: string[] = []): Promise<any> {
+    return this.request("POST", `/v1/sandboxes/${sandboxId}/ram-snapshot`, { warm_packages: warmPackages });
+  }
+
+  /** Restore guest memory state from RAM snapshot in 12ms */
+  async restoreRAMSnapshot(snapshotId: string, sandboxId?: string): Promise<any> {
+    return this.request("POST", `/v1/sandboxes/${sandboxId || "default"}/ram-snapshot/restore`, { snapshot_id: snapshotId });
+  }
+
+  /** Inspect or configure eBPF kernel TAP outbound secret exfiltration firewall */
+  async configureSecretShield(sandboxId: string, options: { action?: "get" | "enable" | "disable" } = {}): Promise<any> {
+    const action = options.action ?? "get";
+    return this.request(action === "get" ? "GET" : "POST", `/v1/sandboxes/${sandboxId}/shield`, action === "get" ? undefined : { action });
+  }
+
+  /** Capture real-time screenshot or CDP stream frame from headless browser canvas */
+  async captureBrowserDisplay(sandboxId: string, options: { format?: "jpeg" | "png" | "webp"; quality?: number } = {}): Promise<any> {
+    const format = options.format ?? "jpeg";
+    const quality = options.quality ?? 80;
+    return this.request("GET", `/v1/sandboxes/${sandboxId}/display?format=${format}&quality=${quality}`);
+  }
+
   /**
    * Seamlessly transitions execution from an in-memory Tier 0 session to a hardware-isolated Thanaton MicroVM,
    * re-hydrating preserved session state (variables, memory) inside the new sandbox.
@@ -432,7 +440,7 @@ export class ThanatonClient {
     }
 
     if (Object.keys(state).length > 0) {
-      const lines = ["# Re-hydrated Tier 0 State from Eschaton Session"];
+      const lines = ["# Re-hydrated Tier 0 State from Aletheia/Eschaton Session"];
       for (const [k, v] of Object.entries(state)) {
         if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(k)) continue;
         let val = v;
@@ -578,7 +586,7 @@ export class ThanatonClient {
   }
 
   /**
-   * Nephis Deterministic Engine Titan 7: Spawns parallel multiverse timelines under deterministic PRNG seeds
+   * Kronos Titan 7: Spawns parallel multiverse timelines under deterministic PRNG seeds
    * and network chaos scenarios (asymmetric drop, ack stall, split brain).
    */
   async forkMultiverse(options: {

@@ -322,6 +322,34 @@ export class Sandbox {
   }
 
   /**
+   * Capture running guest RAM state directly to high-speed /dev/shm in ~15ms.
+   */
+  async createRAMSnapshot(warmPackages: string[] = []): Promise<any> {
+    return this.client.createRAMSnapshot(this.id, warmPackages);
+  }
+
+  /**
+   * Restore this sandbox from a pre-warmed RAM snapshot in 12ms.
+   */
+  async restoreRAMSnapshot(snapshotId: string): Promise<any> {
+    return this.client.restoreRAMSnapshot(snapshotId, this.id);
+  }
+
+  /**
+   * Inspect or configure eBPF kernel TAP outbound secret exfiltration firewall.
+   */
+  async configureSecretShield(action: "get" | "enable" | "disable" = "get"): Promise<any> {
+    return this.client.configureSecretShield(this.id, { action });
+  }
+
+  /**
+   * Capture real-time screenshot or CDP stream frame from headless browser canvas.
+   */
+  async captureBrowserDisplay(options: { format?: "jpeg" | "png" | "webp"; quality?: number } = {}): Promise<any> {
+    return this.client.captureBrowserDisplay(this.id, options);
+  }
+
+  /**
    * Gracefully terminate guest processes, clean up database tables, delete TAP network interfaces,
    * unmount cgroups, and permanently reclaim sandbox resources.
    */

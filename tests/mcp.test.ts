@@ -188,7 +188,15 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(toolNames.includes("eschaton_fileio_eval"));
     assert.ok(toolNames.includes("eschaton_special_judge"));
 
-    assert.equal(res.result.tools.length, 86);
+    // Newly added 7 features tools
+    assert.ok(toolNames.includes("mnemon_merge_branch"));
+    assert.ok(toolNames.includes("thanaton_list_golden_amis"));
+    assert.ok(toolNames.includes("thanaton_create_ram_snapshot"));
+    assert.ok(toolNames.includes("thanaton_restore_ram_snapshot"));
+    assert.ok(toolNames.includes("thanaton_secret_shield_status"));
+    assert.ok(toolNames.includes("thanaton_capture_browser_display"));
+
+    assert.equal(res.result.tools.length, 92);
   });
 
   let provisionedSandboxId = "";
@@ -441,5 +449,91 @@ describe("Thanaton MCP Server Protocol & Tools", () => {
     assert.ok(res.result);
     assert.equal(res.result.isError, true);
     assert.ok(res.result.content[0].text.includes("Error: 'query' argument is required"));
+  });
+
+  it("should create PII-masked branch and merge branch via mnemon tools", async () => {
+    const branchRes = await sendRpc("tools/call", {
+      name: "mnemon_create_branch",
+      arguments: {
+        tenant_id: "test-tenant",
+        new_branch: "staging-pii-safe",
+        mask_pii: true,
+      },
+    });
+    assert.ok(branchRes.result);
+    const branchData = JSON.parse(branchRes.result.content[0].text);
+    assert.equal(branchData.status, "BRANCH_CREATED");
+    assert.equal(branchData.pii_masked, true);
+
+    const mergeRes = await sendRpc("tools/call", {
+      name: "mnemon_merge_branch",
+      arguments: {
+        tenant_id: "test-tenant",
+        branch_id: "staging-pii-safe",
+        parent_branch: "main",
+      },
+    });
+    assert.ok(mergeRes.result);
+    const mergeData = JSON.parse(mergeRes.result.content[0].text);
+    assert.equal(mergeData.status, "MERGED");
+    assert.equal(mergeData.fast_forward, true);
+  });
+
+  it("should list golden AMIs, create RAM snapshot, and test secret shield via Thanaton tools", async () => {
+    const amiRes = await sendRpc("tools/call", {
+      name: "thanaton_list_golden_amis",
+      arguments: {},
+    });
+    assert.ok(amiRes.result);
+    const amiData = JSON.parse(amiRes.result.content[0].text);
+    assert.equal(amiData.status, "success");
+    assert.ok(Array.isArray(amiData.images));
+
+    const snapRes = await sendRpc("tools/call", {
+      name: "thanaton_create_ram_snapshot",
+      arguments: {
+        sandbox_id: "sbx-test-snapshot",
+        warm_packages: ["next", "react"],
+      },
+    });
+    assert.ok(snapRes.result);
+    const snapData = JSON.parse(snapRes.result.content[0].text);
+    assert.equal(snapData.status, "SNAPSHOT_CREATED");
+    assert.ok(snapData.snapshot_id);
+
+    const restoreRes = await sendRpc("tools/call", {
+      name: "thanaton_restore_ram_snapshot",
+      arguments: {
+        snapshot_id: snapData.snapshot_id,
+        sandbox_id: "sbx-restored-test",
+      },
+    });
+    assert.ok(restoreRes.result);
+    const restoreData = JSON.parse(restoreRes.result.content[0].text);
+    assert.equal(restoreData.status, "RESTORED");
+
+    const shieldRes = await sendRpc("tools/call", {
+      name: "thanaton_secret_shield_status",
+      arguments: {
+        sandbox_id: "sbx-test-snapshot",
+        action: "get",
+      },
+    });
+    assert.ok(shieldRes.result);
+    const shieldData = JSON.parse(shieldRes.result.content[0].text);
+    assert.equal(shieldData.status, "ACTIVE");
+    assert.equal(shieldData.bpf_filter_attached, true);
+
+    const canvasRes = await sendRpc("tools/call", {
+      name: "thanaton_capture_browser_display",
+      arguments: {
+        sandbox_id: "sbx-test-snapshot",
+        format: "jpeg",
+      },
+    });
+    assert.ok(canvasRes.result);
+    const canvasData = JSON.parse(canvasRes.result.content[0].text);
+    assert.equal(canvasData.status, "CAPTURED");
+    assert.ok(canvasData.frame_data_base64);
   });
 });

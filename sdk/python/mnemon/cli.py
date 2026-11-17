@@ -832,7 +832,7 @@ def cmd_scaling(args):
         print(f"    Idle Suspend:  {sc.get('idle_suspend_seconds')}s")
 
 def cmd_cdc(args):
-    """Mnemon Real-time Change Data Capture (CDC) streaming and introspection."""
+    """Lethe Real-time Change Data Capture (CDC) streaming and introspection."""
     project_id = args.project_id
     if args.action == "stats":
         res = request("GET", f"/v1/projects/{urllib.parse.quote(project_id)}/cdc/stats")
@@ -863,7 +863,7 @@ def cmd_cdc(args):
         url = f"{get_base_url()}/v1/projects/{urllib.parse.quote(project_id)}/cdc/stream?table={urllib.parse.quote(args.table)}&action={urllib.parse.quote(args.event_action)}"
         if args.replay_since:
             url += f"&replay_since={args.replay_since}"
-        print(f"[*] Connecting to Mnemon CDC real-time stream for project '{project_id}'...")
+        print(f"[*] Connecting to Lethe CDC real-time stream for project '{project_id}'...")
         print(f"[*] Filters: Table='{args.table}', Action='{args.event_action}'")
         print("    Press Ctrl+C to disconnect.\n" + "-" * 70)
         req = urllib.request.Request(url, headers={"Accept": "text/event-stream"})
@@ -1075,7 +1075,7 @@ def main():
     p_scale.set_defaults(func=cmd_scaling)
 
     # mnemon cdc <project_id> {stream,publish,stats}
-    p_cdc = subparsers.add_parser("cdc", help="Mnemon Real-time Change Data Capture (CDC) streaming and introspection")
+    p_cdc = subparsers.add_parser("cdc", help="Lethe Real-time Change Data Capture (CDC) streaming and introspection")
     p_cdc_sub = p_cdc.add_subparsers(dest="action", required=True)
     p_cdc_stream = p_cdc_sub.add_parser("stream", help="Stream live row mutations over real-time SSE stream")
     p_cdc_stream.add_argument("project_id", help="Database project / tenant identifier")
