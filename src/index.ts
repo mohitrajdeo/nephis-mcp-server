@@ -297,7 +297,8 @@ const MNEMON_API_URL = (process.env.MNEMON_API_URL && !process.env.MNEMON_API_UR
   : `${NEPHIS_BASE_URL}/v1/db`;
 
 async function callMnemonApi(endpoint: string, options: RequestInit = {}): Promise<any> {
-  const url = `${MNEMON_API_URL}${endpoint}`;
+  const base = endpoint.startsWith("/v1/metrics/") ? NEPHIS_BASE_URL : MNEMON_API_URL;
+  const url = `${base}${endpoint}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     "User-Agent": USER_AGENT,
@@ -1418,6 +1419,51 @@ const TOOLS: Tool[] = [
       required: ["source_code", "checker_code"],
     },
   },
+  {
+    name: "mnemon_metrics_catalog",
+    description: "Inventory counts of projects, branches and snapshots with value, unit, observed_at, source and stale.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "mnemon_metrics_branches",
+    description: "Per-branch timeline ID, LSN, state, age_seconds and creation timestamps.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "mnemon_metrics_snapshots",
+    description: "Snapshot size_mb, LSN and created_at with provenance.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "mnemon_project_metrics",
+    description: "Measured branch and snapshot counts for one Mnemon project.",
+    inputSchema: {
+      type: "object",
+      properties: { project_id: { type: "string", description: "Target project ID" } },
+      required: ["project_id"],
+    },
+  },
+  {
+    name: "thanaton_fleet_metrics",
+    description: "Fleet aggregate metrics: organizations, projects, deployments; guest VMs and idle cost are null/stale when not provided.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "thanaton_fleet_projects",
+    description: "Per-project state, runtime, resources, deployment counts and timestamps.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "thanaton_fleet_deployments",
+    description: "Deployment build duration, snapshot size, status and node ID.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "thanaton_fleet_snapshots",
+    description: "Volume snapshot inventory with measured size_mb, state and rootfs hash.",
+    inputSchema: { type: "object", properties: {} },
+  },
+
 ];
 
 // Initialize MCP Server
@@ -1914,7 +1960,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
           }
 
-          default:
+      default:
             runnerCmd = `python3 -c "import base64; exec(base64.b64decode('${b64}').decode('utf-8'))"`;
         }
 
@@ -3818,6 +3864,48 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           method: "POST",
           body: JSON.stringify(payload),
         });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_metrics_catalog": {
+        const res = await callMnemonApi("/v1/metrics/catalog");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_metrics_branches": {
+        const res = await callMnemonApi("/v1/metrics/branches");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_metrics_snapshots": {
+        const res = await callMnemonApi("/v1/metrics/snapshots");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_project_metrics": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(projectId)}/metrics/overview`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_fleet_metrics": {
+        const res = await callThanatonApi("/api/v1/metrics/fleet/overview");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_fleet_projects": {
+        const res = await callThanatonApi("/api/v1/metrics/fleet/projects");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_fleet_deployments": {
+        const res = await callThanatonApi("/api/v1/metrics/fleet/deployments");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_fleet_snapshots": {
+        const res = await callThanatonApi("/api/v1/metrics/fleet/snapshots");
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
