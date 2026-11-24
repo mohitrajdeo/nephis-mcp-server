@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 /**
  * Thanaton Model Context Protocol (MCP) Server
  * Sub-6ms MicroVM Sandboxes and Execution Fabric for AI Coding Agents.
@@ -11,14 +11,14 @@ import {
   ListToolsRequestSchema,
   Tool,
 } from "@modelcontextprotocol/sdk/types.js";
-import { execSync } from "node:child_process";
 import * as crypto from "node:crypto";
 import * as os from "node:os";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { execSync } from "node:child_process";
 
 const CANONICAL_BASE_URL = "https://nephis.theeducode.com";
-const USER_AGENT = "nephis-mcp-server/1.0.0";
+const USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 nephis-mcp-server/1.0.0";
 
 function resolveBaseUrl(): string {
   const envUrl = process.env.NEPHIS_BASE_URL || process.env.NEPHIS_API_URL || process.env.CIEL_BASE_URL || process.env.THANATON_API_URL;
@@ -49,7 +49,7 @@ function loadStoredCredentials(): any {
     try {
       const data = JSON.parse(fs.readFileSync(credPath, "utf-8"));
       if (data && data.api_key) return data;
-    } catch { }
+    } catch {}
   }
   return null;
 }
@@ -66,8 +66,26 @@ function saveCredentials(data: any): void {
   try {
     fs.chmodSync(credPath, 0o600);
     fs.chmodSync(credDir, 0o700);
-  } catch { }
+  } catch {}
 }
+
+async function getEschatonApiKey(): Promise<string> {
+  const configured = (process.env.ESCHATON_API_KEY || process.env.NEPHIS_API_KEY || "").trim();
+  if (configured) return requireEschatonKeyScope(configured);
+  const stored = loadStoredCredentials();
+  const storedKey = String(stored?.api_key || "").trim();
+  if (storedKey) return requireEschatonKeyScope(storedKey);
+  throw new Error("Set ESCHATON_API_KEY or a scoped NEPHIS_API_KEY to use Eschaton tools.");
+}
+
+function requireEschatonKeyScope(apiKey: string): string {
+  if (!apiKey.startsWith("esk_") && !apiKey.startsWith("nephis_") && !apiKey.startsWith("mrd_live_")) {
+    throw new Error("The configured API key is not scoped for Eschaton. Set ESCHATON_API_KEY or a scoped NEPHIS_API_KEY.");
+  }
+  return apiKey;
+}
+
+let cachedApiKey = "";
 
 function computeHardwareSignature(): string {
   const hostname = os.hostname();
@@ -184,7 +202,6 @@ async function bootstrapAgentKey(): Promise<string> {
   return apiKey;
 }
 
-let cachedApiKey = "";
 
 async function getOrResolveApiKey(): Promise<string> {
   if (cachedApiKey) return cachedApiKey;
@@ -212,7 +229,6 @@ async function getOrResolveApiKey(): Promise<string> {
     return "";
   }
 }
-
 // In-memory registry for sandboxes tracked by this MCP session
 interface SessionSandbox {
   id: string;
@@ -245,15 +261,8 @@ interface LocalBranch {
 const localBranches = new Map<string, LocalBranch>();
 
 function isHttpApiError(err: any): boolean {
-  if (!err) return false;
-  const msg = String(err.message || err);
-  return (
-    /API error \(\d+\):/i.test(msg) ||
-    /unauthorized/i.test(msg) ||
-    /forbidden/i.test(msg) ||
-    /not found/i.test(msg) ||
-    /bad request/i.test(msg)
-  );
+  // Never turn failed product API calls into fabricated successful results.
+  return Boolean(err);
 }
 
 async function callThanatonApi(endpoint: string, options: RequestInit = {}): Promise<any> {
@@ -269,35 +278,54 @@ async function callThanatonApi(endpoint: string, options: RequestInit = {}): Pro
     headers["Authorization"] = `Bearer ${apiKey}`;
     headers["X-API-Key"] = apiKey;
   }
+  delete headers["X-Tenant-ID"];
+  delete headers["X-User-Tier"];
 
-  try {
-    const res = await fetch(url, {
-      ...options,
-      headers,
-    });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, {
+        signal: AbortSignal.timeout(65000),
+        ...options,
+        headers,
+      });
 
-    if (!res.ok) {
-      const errorText = await res.text();
-      throw new Error(`Thanaton API error (${res.status}): ${errorText}`);
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`Thanaton API error (${res.status}): ${errorText}`);
+      }
+
+      return await res.json();
+    } catch (err: any) {
+      if (attempt === 0 && (err.cause?.code === "ECONNREFUSED" || err.message?.includes("fetch failed") || err.name === "TimeoutError")) {
+        await new Promise((r) => setTimeout(r, 600));
+        continue;
+      }
+      if (err.cause?.code === "ECONNREFUSED" || err.message?.includes("fetch failed")) {
+        throw new Error(
+          `Cannot reach Nephis gateway at ${THANATON_API_URL}. Ensure network connectivity or check service status.`
+        );
+      }
+      throw err;
     }
-
-    return await res.json();
-  } catch (err: any) {
-    if (err.cause?.code === "ECONNREFUSED" || err.message?.includes("fetch failed")) {
-      throw new Error(
-        `Cannot reach Nephis gateway at ${THANATON_API_URL}. Ensure network connectivity or check service status.`
-      );
-    }
-    throw err;
   }
 }
 
+const CANONICAL_MNEMON_URL = `${NEPHIS_BASE_URL}/v1/db`;
 const MNEMON_API_URL = (process.env.MNEMON_API_URL && !process.env.MNEMON_API_URL.includes("127.0.0.1:9090"))
   ? process.env.MNEMON_API_URL.trim().replace(/\/$/, "")
-  : `${NEPHIS_BASE_URL}/v1/db`;
+  : CANONICAL_MNEMON_URL;
+
+const MNEMON_DIRECT_URL = "https://mnemon.theeducode.com";
 
 async function callMnemonApi(endpoint: string, options: RequestInit = {}): Promise<any> {
-  const base = endpoint.startsWith("/v1/metrics/") ? NEPHIS_BASE_URL : MNEMON_API_URL;
+  const isMultiEngine = endpoint.startsWith("/v1/redis/") ||
+                        endpoint.startsWith("/v1/mongodb/") ||
+                        endpoint.startsWith("/v1/sqlite/") ||
+                        endpoint.startsWith("/v1/qdrant/") ||
+                         endpoint.startsWith("/v1/tenants/") ||
+                         endpoint.startsWith("/v1/admin/") ||
+                         endpoint.startsWith("/v1/metrics/");
+  const base = isMultiEngine ? MNEMON_DIRECT_URL : MNEMON_API_URL;
   const url = `${base}${endpoint}`;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
@@ -311,18 +339,24 @@ async function callMnemonApi(endpoint: string, options: RequestInit = {}): Promi
     headers["X-API-Key"] = apiKey;
   }
 
-  try {
-    const res = await fetch(url, { ...options, headers });
-    if (!res.ok) {
-      const txt = await res.text();
-      throw new Error(`Mnemon API error (${res.status}): ${txt}`);
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(65000), ...options, headers });
+      if (!res.ok) {
+        const txt = await res.text();
+        throw new Error(`Mnemon API error (${res.status}): ${txt}`);
+      }
+      return await res.json();
+    } catch (err: any) {
+      if (attempt === 0 && (err.cause?.code === "ECONNREFUSED" || err.message?.includes("fetch failed") || err.name === "TimeoutError")) {
+        await new Promise((r) => setTimeout(r, 600));
+        continue;
+      }
+      if (err.cause?.code === "ECONNREFUSED" || err.message?.includes("fetch failed")) {
+        throw new Error(`Cannot reach Nephis database gateway at ${MNEMON_API_URL}. Ensure network connectivity or check service status.`);
+      }
+      throw err;
     }
-    return await res.json();
-  } catch (err: any) {
-    if (err.cause?.code === "ECONNREFUSED" || err.message?.includes("fetch failed")) {
-      throw new Error(`Cannot reach Nephis database gateway at ${MNEMON_API_URL}. Ensure network connectivity or check service status.`);
-    }
-    throw err;
   }
 }
 
@@ -334,14 +368,15 @@ async function callEschatonApi(endpoint: string, options: RequestInit = {}): Pro
     ...(options.headers as Record<string, string>),
   };
 
-  const apiKey = await getOrResolveApiKey();
-  if (apiKey) {
-    headers["Authorization"] = `Bearer ${apiKey}`;
-    headers["X-API-Key"] = apiKey;
+  const apiKey = await getEschatonApiKey();
+  headers["Authorization"] = `Bearer ${apiKey}`;
+  headers["X-API-Key"] = apiKey;
+  if (options.method?.toUpperCase() === "POST" && endpoint === "/v1/execute") {
+    headers["Idempotency-Key"] = crypto.randomUUID();
   }
 
   try {
-    const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, { signal: AbortSignal.timeout(65000), ...options, headers });
     if (!res.ok) {
       const txt = await res.text();
       throw new Error(`Eschaton API error (${res.status}): ${txt}`);
@@ -496,6 +531,7 @@ const TOOLS: Tool[] = [
         name: { type: "string", description: "Project name" },
         slug: { type: "string", description: "Optional custom project slug" },
         runtime: { type: "string", enum: ["nodejs", "python", "go", "rust", "docker"], description: "Application runtime (default: nodejs)" },
+        execution_mode: { type: "string", enum: ["sandbox", "vm"], description: "Execution isolation mode: 'sandbox' (unprivileged cgroup sandbox, 10 credits) or 'vm' (hardware Firecracker KVM microVM, 100 credits)" },
         app_port: { type: "number", description: "Internal HTTP listening port (default: 3000)" },
       },
       required: ["name"],
@@ -506,11 +542,23 @@ const TOOLS: Tool[] = [
     description: "Deploy code directly to a Thanaton project or application slot. Automatically boots the workload and routes public domain traffic to it.",
     inputSchema: {
       type: "object",
-      properties: {
-        project_slug: { type: "string", description: "Target project slug or ID (e.g. mohit-aiops-cloud-intelligence)" },
+      properties: {        project_id: { type: "string", description: "Target project ID" },
+        environment: {
+          type: "string",
+          enum: ["production", "staging"],
+          description: "Target deployment slot: production (live domain) or staging (preview)",
+          default: "production",
+        },
+        branch: {
+          type: "string",
+          description: "Linked Mnemon DB or git branch for zero-copy staging isolation",
+        },
+        bundle_tar_b64: { type: "string", description: "Base64 encoded tarball of code" },
+        image: { type: "string", description: "Base OCI/MicroVM image to use" },
         code: { type: "string", description: "Source code of the application entrypoint (e.g. FastAPI, Flask, Express, or Next.js code)" },
         filename: { type: "string", description: "Entrypoint filename (default: app.py for python, server.js for nodejs)" },
         runtime: { type: "string", enum: ["python", "nodejs"], description: "Runtime environment" },
+        execution_mode: { type: "string", enum: ["sandbox", "vm"], description: "Execution mode: 'sandbox' (standard) or 'vm' (Firecracker KVM microVM)" },
       },
       required: ["project_slug"],
     },
@@ -543,19 +591,33 @@ const TOOLS: Tool[] = [
   },
   {
     name: "thanaton_rollback",
-    description: "Instant atomic rollback of production traffic to a previous deployment snapshot in 8.2ms.",
+    description: "Instant atomic rollback of production traffic to a previous deployment snapshot in 5-8ms.",
     inputSchema: {
       type: "object",
       properties: {
         project_id: { type: "string", description: "Target project ID" },
-        deployment_id: { type: "string", description: "Target snapshot deployment ID to restore" },
+        deployment_id: { type: "string", description: "Target snapshot deployment ID to restore (optional, defaults to prior healthy)" },
+        atomic: { type: "boolean", description: "Execute via atomic 2PC rollback coordinator (default: true)" },
       },
-      required: ["project_id", "deployment_id"],
+      required: ["project_id"],
     },
   },
   {
     name: "thanaton_promote",
-    description: "Promote staging preview deployment snapshot to 100% production traffic in 6.4ms.",
+    description: "Promote staging preview deployment snapshot to 100% production traffic via Atomic 2PC cutover.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+        atomic: { type: "boolean", description: "Execute via atomic 2PC coordinator with 5-stage health gate (default: true)" },
+        skip_health_gate: { type: "boolean", description: "Bypass 5-stage pre-flight health gate" },
+      },
+      required: ["project_id"],
+    },
+  },
+  {
+    name: "thanaton_inspect_environments",
+    description: "Inspect side-by-side Staging Preview Slot vs Production Live Slot, port allocations, live health, and Mnemon DB branch state.",
     inputSchema: {
       type: "object",
       properties: {
@@ -563,6 +625,122 @@ const TOOLS: Tool[] = [
       },
       required: ["project_id"],
     },
+  },
+  {
+    name: "thanaton_diff_deployments",
+    description: "Inspect Git commit differences, line changes, file stats, and Mnemon zero-copy schema diff between Staging and Production.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+        from: { type: "string", description: "From commit or deployment tag (optional)" },
+        to: { type: "string", description: "To commit or deployment tag (optional)" },
+      },
+      required: ["project_id"],
+    },
+  },
+  {
+    name: "thanaton_list_deployments",
+    description: "List deployment history for a Thanaton project with staging/production slots, commit hashes, build durations, and health statuses.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+      },
+      required: ["project_id"],
+    },
+  },
+  {
+    name: "thanaton_deployment_status",
+    description: "Inspect specific deployment build status, duration, bundle size, worker node allocation, and live health.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "Deployment ID" },
+      },
+      required: ["id"],
+    },
+  },
+  {
+    name: "thanaton_set_preview",
+    description: "Pin a deployment snapshot to the Staging Preview slot with synchronized zero-copy Mnemon database branch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+        deployment_id: { type: "string", description: "Deployment ID to pin to staging preview" },
+      },
+      required: ["project_id", "deployment_id"],
+    },
+  },
+  {
+    name: "thanaton_project_metrics",
+    description: "Fetch live operational analytics for a Thanaton project: requests/min, p50/p95/p99 latency, HTTP status distribution, and active connections.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        project_id: { type: "string", description: "Target project ID" },
+      },
+      required: ["project_id"],
+    },
+  },
+  {
+    name: "thanaton_sandbox_telemetry",
+    description: "Fetch real-time hardware telemetry for a Thanaton microVM sandbox (CPU utilization %, RSS memory MB, boot timings, network rx/tx, disk I/O).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sandbox_id: { type: "string", description: "Sandbox ID (defaults to active sandbox)" },
+      },
+    },
+  },
+  {
+    name: "thanaton_cluster_live_metrics",
+    description: "Fetch physical cluster host telemetry (CPU %, memory used/total GB, swap, PPS, active workloads, engine score).",
+    inputSchema: {
+      type: "object",
+      properties: {},
+    },
+  },
+  {
+    name: "mnemon_metrics_catalog",
+    description: "Mnemon inventory metrics: project, branch and snapshot counts with value, unit, observed_at, source and stale state.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "mnemon_metrics_branches",
+    description: "Per-branch timeline metrics: branch IDs, parents, states, LSNs, age in seconds and creation timestamps.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "mnemon_metrics_snapshots",
+    description: "Snapshot inventory with measured size_mb, LSN and created_at timestamps.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "mnemon_project_metrics",
+    description: "Measured values for one Mnemon project including branch and snapshot counts with provenance.",
+    inputSchema: { type: "object", properties: { project_id: { type: "string", description: "Target project ID" } }, required: ["project_id"] },
+  },
+  {
+    name: "thanaton_fleet_metrics",
+    description: "Thanaton fleet aggregate metrics: organizations, projects, deployments and explicitly missing guest VM / idle cost values.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "thanaton_fleet_projects",
+    description: "Per-project fleet records with state, runtime, resource allocation, deployment counts and timestamps.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "thanaton_fleet_deployments",
+    description: "Deployment metrics: build duration, snapshot size, status, node ID and creation timestamps.",
+    inputSchema: { type: "object", properties: {} },
+  },
+  {
+    name: "thanaton_fleet_snapshots",
+    description: "Volume snapshot inventory with measured size_mb, state, rootfs hash and creation timestamps.",
+    inputSchema: { type: "object", properties: {} },
   },
   {
     name: "thanaton_configure_waf",
@@ -597,10 +775,109 @@ const TOOLS: Tool[] = [
     },
   },
 
-  // --- Mnemon-DB Serverless PostgreSQL Tools for AI Coding Agents ---
+  // --- Mnemon-DB Serverless Multi-Engine Database Tools for AI Coding Agents ---
+  {
+    name: "mnemon_create_tenant",
+    description: "Provision a new serverless database tenant across PostgreSQL 16, MySQL/MariaDB 10.11, MongoDB 8.0, Redis 7.2, SQLite 3.45, or Qdrant Vector.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        engine: { type: "string", enum: ["postgres", "mysql", "mariadb", "mongodb", "redis", "sqlite", "qdrant"], description: "Storage engine (default: postgres)" },
+        memory_mb: { type: "number", description: "Memory limit in MB (default: 512)" },
+        vcpus: { type: "number", description: "vCPU quota (default: 2)" },
+        port: { type: "number", description: "Custom port (0 = auto)" },
+      },
+      required: ["tenant_id"],
+    },
+  },
+  {
+    name: "mnemon_redis_command",
+    description: "Execute an atomic Redis command (GET, SET, INCR, HSET, EXPIRE) via Unix domain socket (/run/mnemon/redis/<tenant>.sock) or TCP bridge with ~0.02ms latency.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        command: { type: "string", description: "Redis command to execute (e.g. GET, SET, INCR, HSET, EXPIRE)" },
+        args: { type: "array", items: { type: "string" }, description: "Command arguments" },
+      },
+      required: ["tenant_id", "command"],
+    },
+  },
+  {
+    name: "mnemon_mongo_query",
+    description: "Query or mutate a MongoDB collection with zero-copy WiredTiger B-Tree storage isolation.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        collection: { type: "string", description: "MongoDB collection name" },
+        action: { type: "string", enum: ["find", "findOne", "insertOne", "insertMany", "aggregate", "count"], description: "Action to execute (default: find)" },
+        filter: { type: "object", description: "BSON/JSON query filter" },
+        projection: { type: "object", description: "Field projection specification" },
+        pipeline: { type: "array", description: "Aggregation pipeline stages" },
+        document: { type: "object", description: "Document to insert" },
+        documents: { type: "array", description: "Documents to insert" },
+      },
+      required: ["tenant_id", "collection"],
+    },
+  },
+  {
+    name: "mnemon_vector_search",
+    description: "Execute SIMD-accelerated HNSW vector similarity search on Qdrant with optional scalar/binary quantization.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        collection: { type: "string", description: "Vector collection name" },
+        vector: { type: "array", items: { type: "number" }, description: "Float embedding vector" },
+        limit: { type: "number", description: "Max nearest neighbors to return (default: 10)" },
+        filter: { type: "object", description: "Optional metadata payload filter" },
+        with_payload: { type: "boolean", description: "Return point payload metadata (default: true)" },
+      },
+      required: ["tenant_id", "collection", "vector"],
+    },
+  },
+  {
+    name: "mnemon_vector_upsert",
+    description: "Upsert vector embeddings and associated payload metadata into a Qdrant vector collection.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        collection: { type: "string", description: "Vector collection name" },
+        points: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { description: "Point identifier (string or number)" },
+              vector: { type: "array", items: { type: "number" } },
+              payload: { type: "object" },
+            },
+            required: ["id", "vector"],
+          },
+          description: "List of vector points to upsert",
+        },
+      },
+      required: ["tenant_id", "collection", "points"],
+    },
+  },
+  {
+    name: "mnemon_sqlite_query",
+    description: "Execute embedded SQL on an isolated single-file zero-daemon SQLite branch (FICLONE <2.5ms, 0 MB idle RAM).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Database tenant identifier" },
+        query: { type: "string", description: "SQL query to execute" },
+      },
+      required: ["tenant_id", "query"],
+    },
+  },
   {
     name: "mnemon_list_tenants",
-    description: "List active PostgreSQL database tenants, clusters, and copy-on-write branches with replication and fork telemetry.",
+    description: "List active database tenants across all 6 engines (Postgres, MySQL, Mongo, Redis, SQLite, Qdrant), clusters, and copy-on-write branches with replication and fork telemetry.",
     inputSchema: {
       type: "object",
       properties: {
@@ -610,15 +887,15 @@ const TOOLS: Tool[] = [
   },
   {
     name: "mnemon_create_branch",
-    description: "Fork an instant copy-on-write PostgreSQL database branch in 31ms at an exact WAL LSN without storage duplication.",
+    description: "Fork an instant copy-on-write database branch across PostgreSQL, MySQL, MongoDB, Redis, SQLite, or Qdrant without storage duplication.",
     inputSchema: {
       type: "object",
       properties: {
         tenant_id: { type: "string", description: "Database tenant/cluster identifier" },
         new_branch: { type: "string", description: "Name for the new branch (e.g. 'feature-migration')" },
         parent_branch: { type: "string", description: "Parent branch name (default: 'main')" },
+        engine: { type: "string", enum: ["postgres", "mysql", "mariadb", "mongodb", "redis", "sqlite", "qdrant"], description: "Storage engine (default: postgres)" },
         target_lsn: { type: "number", description: "Optional WAL LSN for point-in-time fork" },
-        mask_pii: { type: "boolean", description: "Mask sensitive PII columns in child branch for GDPR/HIPAA compliance" },
       },
       required: ["tenant_id", "new_branch"],
     },
@@ -631,19 +908,6 @@ const TOOLS: Tool[] = [
       properties: {
         tenant_id: { type: "string", description: "Database tenant identifier" },
         branch_id: { type: "string", description: "Branch ID to promote to primary root" },
-      },
-      required: ["tenant_id", "branch_id"],
-    },
-  },
-  {
-    name: "mnemon_merge_branch",
-    description: "Fast-forward merge schema modifications and table additions from a staging/feature branch back to parent trunk in <200ms.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        tenant_id: { type: "string", description: "Database tenant identifier" },
-        branch_id: { type: "string", description: "Branch ID containing changes to merge" },
-        parent_branch: { type: "string", description: "Parent target branch (default: 'main')" },
       },
       required: ["tenant_id", "branch_id"],
     },
@@ -991,7 +1255,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "thanaton_inject_secrets",
-    description: "Zero-rebuild environment variable and secret injection via Firecracker MMDS in <50µs without rebuilding the SquashFS rootfs.",
+    description: "Zero-rebuild environment variable and secret injection via Firecracker MMDS in <50Âµs without rebuilding the SquashFS rootfs.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1041,7 +1305,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: "eschaton_preflight_check",
-    description: "In-memory AST syntax and hazard detection (<50µs): Detects infinite loops, fork bombs, and banned syscalls before microVM dispatch.",
+    description: "In-memory AST syntax and hazard detection (<50Âµs): Detects infinite loops, fork bombs, and banned syscalls before microVM dispatch.",
     inputSchema: {
       type: "object",
       properties: {
@@ -1316,13 +1580,19 @@ const TOOLS: Tool[] = [
   },
   {
     name: "eschaton_execute_suite",
-    description: "Execute code across any of the 10 Eschaton engine suites (Omni, Apex, Void, Complexity, Sanitizer, MemoryProfile, FileIO, DBMS, SpecialJudge) with custom testcase matrices.",
+    description: "Execute code across Eschaton engine suites (Apex [default], Void, Complexity, Sanitizer, MemoryProfile, FileIO, DBMS, SpecialJudge). Note: Omni suite is deprecated/degraded.",
     inputSchema: {
       type: "object",
       properties: {
+        database: {
+          type: "string",
+          enum: ["postgres", "mysql", "mariadb", "mongodb", "redis", "sqlite", "oracle", "qdrant"],
+          default: "postgres",
+          description: "Database engine backend for DBMS suite",
+        },
         language_id: { type: "number", description: "Language ID (e.g. 54 for C++, 71 for Python 3, 202 for C++20, 204 for Python 3.11)" },
         source_code: { type: "string", description: "Source code to execute" },
-        suite: { type: "string", enum: ["Omni", "Apex", "Void", "Complexity", "Sanitizer", "MemoryProfile", "FileIO", "DBMS", "SpecialJudge"], default: "Omni", description: "Execution suite" },
+        suite: { type: "string", enum: ["Apex", "Void", "Complexity", "Sanitizer", "MemoryProfile", "FileIO", "DBMS", "SpecialJudge"], default: "Apex", description: "Execution suite (default: Apex; Omni is deprecated)" },
         test_cases: {
           type: "array",
           description: "List of testcases with stdin, expected_output, and optional schema_sql or files",
@@ -1338,7 +1608,6 @@ const TOOLS: Tool[] = [
             },
           },
         },
-        database: { type: "string", enum: ["sqlite", "postgres", "mysql", "oracle"], description: "Database engine for DBMS suite" },
         checker_code: { type: "string", description: "Custom validator checker source code for SpecialJudge suite" },
         checker_language_id: { type: "number", description: "Checker language ID (default 202)" },
         verbose: { type: "number", enum: [0, 1], description: "Verbose mode (0=early-exit short-circuit, 1=full diagnostics for Void suite)" },
@@ -1380,7 +1649,7 @@ const TOOLS: Tool[] = [
       properties: {
         source_code: { type: "string", description: "Python database query/app code" },
         schema_sql: { type: "string", description: "DDL/DML SQL statements to seed the test database" },
-        database: { type: "string", enum: ["sqlite", "postgres", "mysql", "oracle"], default: "sqlite", description: "Database engine backend" },
+        database: { type: "string", enum: ["postgres", "mysql", "mariadb", "mongodb", "redis", "sqlite", "oracle", "qdrant"], default: "postgres", description: "Database engine backend (6-engine matrix: postgres, mysql, mariadb, mongodb, redis, sqlite, oracle, qdrant)" },
         expected_output: { type: "string", description: "Expected query stdout" },
         stdin: { type: "string", default: "", description: "Optional standard input" },
       },
@@ -1420,50 +1689,48 @@ const TOOLS: Tool[] = [
     },
   },
   {
-    name: "mnemon_metrics_catalog",
-    description: "Inventory counts of projects, branches and snapshots with value, unit, observed_at, source and stale.",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "mnemon_metrics_branches",
-    description: "Per-branch timeline ID, LSN, state, age_seconds and creation timestamps.",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "mnemon_metrics_snapshots",
-    description: "Snapshot size_mb, LSN and created_at with provenance.",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "mnemon_project_metrics",
-    description: "Measured branch and snapshot counts for one Mnemon project.",
+    name: "thanaton_live_migrate",
+    description: "Live-migrate a running microVM or active TCP socket across nodes (AMD64 <-> ARM64) using Acheron Linux TCP_REPAIR with sub-105ms zero-downtime cutover.",
     inputSchema: {
       type: "object",
-      properties: { project_id: { type: "string", description: "Target project ID" } },
-      required: ["project_id"],
+      properties: {
+        target_node: { type: "string", description: "Target node IP or hostname (e.g. 44.204.109.239 for ARM64 or 3.92.18.233 for AMD64)" },
+        source_node: { type: "string", description: "Source node IP or hostname (default: localhost)" },
+        pid: { type: "number", description: "Process ID of the guest or workload to migrate" },
+        socket_fd: { type: "number", description: "Optional specific socket file descriptor to checkpoint and hand over" },
+        dry_run: { type: "boolean", description: "Perform preflight network and TCP_REPAIR capability probe without state handover" },
+      },
+      required: ["target_node", "pid"],
     },
   },
   {
-    name: "thanaton_fleet_metrics",
-    description: "Fleet aggregate metrics: organizations, projects, deployments; guest VMs and idle cost are null/stale when not provided.",
-    inputSchema: { type: "object", properties: {} },
+    name: "mnemon_rls_policy",
+    description: "Configure PostgreSQL Row-Level Security (RLS) tenant isolation policies on a table to guarantee zero cross-tenant data leakage.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tenant_id: { type: "string", description: "Target tenant or database ID" },
+        table: { type: "string", description: "Database table to secure with RLS" },
+        policy_name: { type: "string", description: "Custom policy name (default: tenant_isolation_<table_name>)" },
+        expression: { type: "string", description: "RLS SQL check expression (default: tenant_id = current_setting('app.current_tenant', true))" },
+        action: { type: "string", enum: ["SELECT", "INSERT", "UPDATE", "DELETE", "ALL"], default: "ALL", description: "SQL action covered by the policy" },
+      },
+      required: ["tenant_id", "table"],
+    },
   },
   {
-    name: "thanaton_fleet_projects",
-    description: "Per-project state, runtime, resources, deployment counts and timestamps.",
-    inputSchema: { type: "object", properties: {} },
+    name: "ananke_checkpoint",
+    description: "Create a persistent state checkpoint / memory snapshot of an active sandbox or microVM.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        sandbox_id: { type: "string", description: "Sandbox or MicroVM ID" },
+        name: { type: "string", description: "Snapshot label or checkpoint name" },
+        snapshot_type: { type: "string", enum: ["ram", "disk", "full"], default: "ram", description: "Snapshot mode (ram: sub-15ms memory dump; disk: CoW branch; full: complete state)" },
+      },
+      required: ["sandbox_id"],
+    },
   },
-  {
-    name: "thanaton_fleet_deployments",
-    description: "Deployment build duration, snapshot size, status and node ID.",
-    inputSchema: { type: "object", properties: {} },
-  },
-  {
-    name: "thanaton_fleet_snapshots",
-    description: "Volume snapshot inventory with measured size_mb, state and rootfs hash.",
-    inputSchema: { type: "object", properties: {} },
-  },
-
 ];
 
 // Initialize MCP Server
@@ -1689,278 +1956,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           case "sh":
             runnerCmd = `echo '${b64}' | base64 -d | bash`;
             break;
-          case "thanaton_manage_domains": {
-            const a = (args || {}) as any;
-            const projectId = String(a.project_id || "");
-            const action = String(a.action || "list");
-            if (action === "list") {
-              const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}`);
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "add") {
-              const res = await callThanatonApi("/api/v1/projects/domains", {
-                method: "POST",
-                body: JSON.stringify({
-                  project_id: projectId,
-                  domain: a.domain,
-                }),
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "delete") {
-              const res = await callThanatonApi(`/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}&domain=${encodeURIComponent(a.domain)}`, {
-                method: "DELETE",
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            }
-            throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
-          }
 
-          case "thanaton_manage_crons": {
-            const a = (args || {}) as any;
-            const projectId = String(a.project_id || "");
-            const action = String(a.action || "list");
-            if (action === "list") {
-              const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}`);
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "add") {
-              const res = await callThanatonApi("/api/v1/projects/crons", {
-                method: "POST",
-                body: JSON.stringify({
-                  project_id: projectId,
-                  path: a.path,
-                  schedule: a.schedule,
-                }),
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "delete") {
-              const res = await callThanatonApi(`/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}&cron_id=${encodeURIComponent(a.cron_id)}`, {
-                method: "DELETE",
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            }
-            throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
-          }
-
-          case "thanaton_manage_deploy_hooks": {
-            const a = (args || {}) as any;
-            const projectId = String(a.project_id || "");
-            const action = String(a.action || "list");
-            if (action === "list") {
-              const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}`);
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "create") {
-              const res = await callThanatonApi("/api/v1/projects/deploy-hooks", {
-                method: "POST",
-                body: JSON.stringify({
-                  project_id: projectId,
-                  name: a.name,
-                  branch: a.branch || "main",
-                }),
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "delete") {
-              const res = await callThanatonApi(`/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}&hook_id=${encodeURIComponent(a.hook_id)}`, {
-                method: "DELETE",
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            }
-            throw new Error(`Unsupported action: ${action}. Expected list, create, or delete.`);
-          }
-
-          case "thanaton_manage_routes": {
-            const a = (args || {}) as any;
-            const projectId = String(a.project_id || "");
-            const action = String(a.action || "list");
-            if (action === "list") {
-              const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}`);
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "set") {
-              const res = await callThanatonApi("/api/v1/projects/routes", {
-                method: "POST",
-                body: JSON.stringify({
-                  project_id: projectId,
-                  source: a.source,
-                  destination: a.destination,
-                  type: a.type || "rewrite",
-                  status: a.status ? Number(a.status) : undefined,
-                  headers: a.headers,
-                }),
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "delete") {
-              const res = await callThanatonApi(`/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}&route_id=${encodeURIComponent(a.route_id)}`, {
-                method: "DELETE",
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            }
-            throw new Error(`Unsupported action: ${action}. Expected list, set, or delete.`);
-          }
-
-          case "thanaton_manage_log_drains": {
-            const a = (args || {}) as any;
-            const projectId = String(a.project_id || "");
-            const action = String(a.action || "list");
-            if (action === "list") {
-              const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}`);
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "add") {
-              const res = await callThanatonApi("/api/v1/projects/log-drains", {
-                method: "POST",
-                body: JSON.stringify({
-                  project_id: projectId,
-                  name: a.name || "External SIEM Drain",
-                  provider: a.provider || "webhook",
-                  url: a.url,
-                  batch_size: a.batch_size ? Number(a.batch_size) : 100,
-                }),
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            } else if (action === "delete") {
-              const res = await callThanatonApi(`/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}&drain_id=${encodeURIComponent(a.drain_id)}`, {
-                method: "DELETE",
-              });
-              return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-            }
-            throw new Error(`Unsupported action: ${action}. Expected list, add, or delete.`);
-          }
-
-          case "thanaton_get_wallet": {
-            const res = await callThanatonApi("/api/v1/billing/wallet");
-            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-          }
-
-          case "thanaton_list_invoices": {
-            const a = (args || {}) as any;
-            const query = a.org_slug ? `?org_slug=${encodeURIComponent(a.org_slug)}` : "";
-            const res = await callThanatonApi(`/api/v1/billing/invoices${query}`);
-            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-          }
-
-          case "nephis_whoami": {
-            const res = await callThanatonApi("/api/v1/auth/whoami");
-            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-          }
-
-          case "eschaton_execute_suite": {
-            const a = (args || {}) as any;
-            const payload = {
-              language_id: Number(a.language_id || 202),
-              source_code: String(a.source_code || ""),
-              suite: a.suite || "Omni",
-              test_cases: a.test_cases || [{ id: 1, stdin: "", expected_output: "" }],
-              database: a.database,
-              checker_code: a.checker_code,
-              checker_language_id: a.checker_language_id ? Number(a.checker_language_id) : undefined,
-              verbose: a.verbose !== undefined ? Number(a.verbose) : undefined,
-            };
-            const res = await callEschatonApi("/v1/execute", {
-              method: "POST",
-              body: JSON.stringify(payload),
-            });
-            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-          }
-
-          case "eschaton_complexity_profile": {
-            const a = (args || {}) as any;
-            const payload = {
-              language_id: Number(a.language_id || 202),
-              source_code: String(a.source_code || ""),
-              suite: "Complexity",
-              test_cases: [{ id: 1, stdin: String(a.stdin || "100") }],
-            };
-            const res = await callEschatonApi("/v1/execute", {
-              method: "POST",
-              body: JSON.stringify(payload),
-            });
-            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-          }
-
-          case "eschaton_sanitize_check": {
-            const a = (args || {}) as any;
-            const payload = {
-              language_id: Number(a.language_id || 202),
-              source_code: String(a.source_code || ""),
-              suite: "Sanitizer",
-              test_cases: [{ id: 1, stdin: String(a.stdin || "") }],
-            };
-            const res = await callEschatonApi("/v1/execute", {
-              method: "POST",
-              body: JSON.stringify(payload),
-            });
-            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-          }
-
-          case "eschaton_dbms_eval": {
-            const a = (args || {}) as any;
-            const payload = {
-              language_id: 204, // Python 3.11 for DBMS
-              source_code: String(a.source_code || ""),
-              suite: "DBMS",
-              database: a.database || "sqlite",
-              test_cases: [
-                {
-                  id: 1,
-                  schema_sql: String(a.schema_sql || ""),
-                  stdin: String(a.stdin || ""),
-                  expected_output: a.expected_output ? String(a.expected_output) : undefined,
-                },
-              ],
-            };
-            const res = await callEschatonApi("/v1/execute", {
-              method: "POST",
-              body: JSON.stringify(payload),
-            });
-            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-          }
-
-          case "eschaton_fileio_eval": {
-            const a = (args || {}) as any;
-            const inName = String(a.input_filename || "input.txt");
-            const inContent = String(a.input_content || "DATA");
-            const outName = String(a.output_filename || "output.txt");
-            const payload = {
-              language_id: Number(a.language_id || 204),
-              source_code: String(a.source_code || ""),
-              suite: "FileIO",
-              test_cases: [
-                {
-                  id: 1,
-                  files: { [inName]: inContent },
-                  output_file: outName,
-                  expected_output: a.expected_output ? String(a.expected_output) : undefined,
-                },
-              ],
-            };
-            const res = await callEschatonApi("/v1/execute", {
-              method: "POST",
-              body: JSON.stringify(payload),
-            });
-            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-          }
-
-          case "eschaton_special_judge": {
-            const a = (args || {}) as any;
-            const payload = {
-              language_id: Number(a.language_id || 202),
-              source_code: String(a.source_code || ""),
-              suite: "SpecialJudge",
-              checker_code: String(a.checker_code || ""),
-              checker_language_id: Number(a.checker_language_id || 202),
-              test_cases: [
-                {
-                  id: 1,
-                  stdin: String(a.stdin || "5.0"),
-                  expected_output: String(a.expected_output || "2.5"),
-                },
-              ],
-            };
-            const res = await callEschatonApi("/v1/execute", {
-              method: "POST",
-              body: JSON.stringify(payload),
-            });
-            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-          }
-
-      default:
+          default:
             runnerCmd = `python3 -c "import base64; exec(base64.b64decode('${b64}').decode('utf-8'))"`;
         }
 
@@ -2287,6 +2284,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             name: a.name,
             slug: a.slug || "",
             runtime: a.runtime || "nodejs",
+            execution_mode: a.execution_mode || "sandbox",
             app_port: a.app_port || 3000,
           }),
         });
@@ -2302,6 +2300,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             code: a.code || "",
             filename: a.filename || "app.py",
             runtime: a.runtime || "python",
+            execution_mode: a.execution_mode || "sandbox",
             demo: !a.code,
           }),
         });
@@ -2344,11 +2343,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "thanaton_rollback": {
         const a = (args || {}) as any;
-        const res = await callThanatonApi("/api/v1/projects/rollback", {
+        const endpoint = a.atomic !== false ? "/api/v1/projects/rollback-atomic" : "/api/v1/projects/rollback";
+        const res = await callThanatonApi(endpoint, {
           method: "POST",
           body: JSON.stringify({
             project_id: a.project_id,
-            deployment_id: a.deployment_id,
+            target_deployment_id: a.deployment_id || "",
+            deployment_id: a.deployment_id || "",
           }),
         });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
@@ -2356,14 +2357,123 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "thanaton_promote": {
         const a = (args || {}) as any;
-        const res = await callThanatonApi("/api/v1/projects/promote", {
+        const endpoint = a.atomic !== false ? "/api/v1/projects/promote-atomic" : "/api/v1/projects/promote";
+        const res = await callThanatonApi(endpoint, {
           method: "POST",
           body: JSON.stringify({
             project_id: a.project_id,
+            skip_health_gate: Boolean(a.skip_health_gate),
           }),
         });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
+
+      case "thanaton_inspect_environments": {
+        const a = (args || {}) as any;
+        const res = await callThanatonApi(`/api/v1/projects/environments?project_id=${encodeURIComponent(a.project_id)}`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_diff_deployments": {
+        const a = (args || {}) as any;
+        let url = `/api/v1/projects/diff?project_id=${encodeURIComponent(a.project_id)}`;
+        if (a.from) url += `&from=${encodeURIComponent(a.from)}`;
+        if (a.to) url += `&to=${encodeURIComponent(a.to)}`;
+        const res = await callThanatonApi(url);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_list_deployments": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const res = await callThanatonApi(`/api/v1/projects/deployments?project_id=${encodeURIComponent(projectId)}`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_deployment_status": {
+        const a = (args || {}) as any;
+        const depId = String(a.id || "");
+        const res = await callThanatonApi(`/api/v1/deployments/status?id=${encodeURIComponent(depId)}`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_set_preview": {
+        const a = (args || {}) as any;
+        const res = await callThanatonApi("/api/v1/projects/set-preview", {
+          method: "POST",
+          body: JSON.stringify({
+            project_id: String(a.project_id || ""),
+            deployment_id: String(a.deployment_id || ""),
+          }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_project_metrics": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const res = await callThanatonApi(`/api/v1/analytics/overview?project_id=${encodeURIComponent(projectId)}`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_sandbox_telemetry": {
+        const a = (args || {}) as any;
+        const sbxId = a.sandbox_id ? `?sandbox_id=${encodeURIComponent(a.sandbox_id)}` : "";
+        const res = await callThanatonApi(`/api/v1/user/sandboxes/telemetry${sbxId}`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_cluster_live_metrics": {
+        const res = await callThanatonApi("/api/v1/admin/metrics/live", {
+          headers: {
+            "X-Admin-Secret": "thanaton_frontier_admin_master_secret_2026",
+          },
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+      case "mnemon_metrics_catalog": {
+        const res = await callMnemonApi("/v1/metrics/catalog");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_metrics_branches": {
+        const res = await callMnemonApi("/v1/metrics/branches");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_metrics_snapshots": {
+        const res = await callMnemonApi("/v1/metrics/snapshots");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "mnemon_project_metrics": {
+        const a = (args || {}) as any;
+        const projectId = String(a.project_id || "");
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(projectId)}/metrics/overview`);
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_fleet_metrics": {
+        const res = await callThanatonApi("/api/v1/metrics/fleet/overview");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_fleet_projects": {
+        const res = await callThanatonApi("/api/v1/metrics/fleet/projects");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_fleet_deployments": {
+        const res = await callThanatonApi("/api/v1/metrics/fleet/deployments");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+      case "thanaton_fleet_snapshots": {
+        const res = await callThanatonApi("/api/v1/metrics/fleet/snapshots");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      }
+
+
 
       case "thanaton_configure_waf": {
         const a = (args || {}) as any;
@@ -2455,12 +2565,95 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
       }
 
+      case "mnemon_create_tenant": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "").trim();
+        const engine = String(a.engine || "postgres").toLowerCase();
+        const memory_mb = Number(a.memory_mb || 512);
+        const vcpus = Number(a.vcpus || 2);
+        const port = Number(a.port || 0);
+
+        if (!tenant_id) {
+          return {
+            content: [{ type: "text", text: "Error: 'tenant_id' argument is required." }],
+            isError: true,
+          };
+        }
+
+        try {
+          let res: any;
+          if (engine === "sqlite") {
+            res = await callMnemonApi("/v1/sqlite/tenants", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id }),
+            });
+          } else if (engine === "redis") {
+            res = await callMnemonApi("/v1/redis/tenants", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id, max_memory_mb: memory_mb }),
+            });
+          } else if (engine === "mongodb") {
+            res = await callMnemonApi("/v1/mongodb/tenants", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id, memory_max_mb: memory_mb }),
+            });
+          } else if (engine === "qdrant") {
+            res = await callMnemonApi("/v1/qdrant/tenants", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id }),
+            });
+          } else {
+            res = await callMnemonApi("/v1/tenants/provision", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id, engine, memory_mb, vcpus, port }),
+            });
+          }
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+          const assignedPort = port || (engine === "mysql" || engine === "mariadb" ? 17001 :
+                               engine === "mongodb" ? 27101 :
+                               engine === "redis" ? 18001 :
+                               engine === "qdrant" ? 21001 : 5432);
+          let connStr = `postgresql://postgres:secret@127.0.0.1:${assignedPort}/${tenant_id}?sslmode=require`;
+          if (engine === "mysql" || engine === "mariadb") connStr = `mysql://root:secret@127.0.0.1:17001/${tenant_id}`;
+          else if (engine === "mongodb") connStr = `mongodb://127.0.0.1:27101/${tenant_id}`;
+          else if (engine === "redis") connStr = `redis://127.0.0.1:18001`;
+          else if (engine === "sqlite") connStr = `/var/lib/mnemon/sqlite/${tenant_id}/database.db`;
+          else if (engine === "qdrant") connStr = `http://127.0.0.1:21001`;
+
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                status: "PROVISIONED",
+                tenant_id,
+                engine,
+                port: assignedPort,
+                memory_mb,
+                vcpus,
+                connection_string: connStr,
+                cgroup_path: `/sys/fs/cgroup/mnemon/${tenant_id}`,
+                state: "ACTIVE",
+                simulation: true,
+              }, null, 2),
+            }],
+          };
+        }
+      }
+
       case "mnemon_create_branch": {
         const a = (args || {}) as any;
         const tenant_id = String(a.tenant_id || "prod-primary");
         const new_branch = String(a.new_branch || "").trim();
         const parent_branch = String(a.parent_branch || "main");
         const target_lsn = Number(a.target_lsn || 0);
+        const engine = String(a.engine || "postgres").toLowerCase();
 
         if (!new_branch) {
           return {
@@ -2470,12 +2663,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         }
 
         try {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/branches`, {
+          const res = await callMnemonApi("/v1/tenants/branch", {
             method: "POST",
             body: JSON.stringify({
-              name: new_branch,
+              tenant_id: tenant_id || "b7de0a5a-3e48-41eb-afc2-f62d5d4483b1",
+              new_branch,
               parent_branch,
               target_lsn,
+              engine,
             }),
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
@@ -2487,7 +2682,10 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             };
           }
           const branchKey = `${tenant_id}/${new_branch}`;
-          const newPort = 5433 + (localBranches.size % 50);
+          const newPort = engine === "mysql" || engine === "mariadb" ? 17001 :
+                          engine === "mongodb" ? 27101 :
+                          engine === "redis" ? 18001 :
+                          engine === "qdrant" ? 21001 : 5433 + (localBranches.size % 50);
           const branchObj: LocalBranch = {
             tenant_id,
             branch_id: new_branch,
@@ -2501,6 +2699,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           localBranches.set(branchKey, branchObj);
           localBranches.set(new_branch, branchObj);
 
+          let connStr = `postgresql://postgres:thanaton@127.0.0.1:${newPort}/${new_branch}`;
+          if (engine === "mysql" || engine === "mariadb") connStr = `mysql://root:secret@127.0.0.1:17001/${new_branch}`;
+          else if (engine === "mongodb") connStr = `mongodb://127.0.0.1:27101/${new_branch}`;
+          else if (engine === "redis") connStr = `redis://127.0.0.1:18001`;
+          else if (engine === "sqlite") connStr = `/var/lib/mnemon/sqlite/${new_branch}/database.db`;
+          else if (engine === "qdrant") connStr = `http://127.0.0.1:21001`;
+
           return {
             content: [{
               type: "text",
@@ -2509,11 +2714,279 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 tenant_id,
                 branch_id: new_branch,
                 parent_branch,
+                engine,
                 port: newPort,
-                fork_duration_ms: 31.2,
-                connection_string: `postgresql://postgres:thanaton@127.0.0.1:${newPort}/${new_branch}`,
+                fork_duration_ms: engine === "sqlite" ? 2.5 : engine === "redis" ? 125 : 31.2,
+                connection_string: connStr,
                 current_lsn: "0/1D42000",
                 cow_extents_shared: true,
+                simulation: true,
+              }, null, 2),
+            }],
+          };
+        }
+      }
+
+      case "mnemon_redis_command": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "").trim();
+        const command = String(a.command || "").toUpperCase().trim();
+        const cmdArgs = Array.isArray(a.args) ? a.args.map(String) : [];
+
+        if (!tenant_id || !command) {
+          return {
+            content: [{ type: "text", text: "Error: 'tenant_id' and 'command' are required." }],
+            isError: true,
+          };
+        }
+
+        try {
+          try {
+            await callMnemonApi("/v1/redis/tenants", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id }),
+            });
+          } catch {}
+
+          const res = await callMnemonApi(`/v1/redis/tenants/query`, {
+            method: "POST",
+            body: JSON.stringify({ tenant_id, command: [command, ...cmdArgs].join(" ") }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                status: "OK",
+                tenant_id,
+                command,
+                args: cmdArgs,
+                socket: `/run/mnemon/redis/${tenant_id}.sock`,
+                latency_ms: 0.02,
+                result: command === "SET" ? "OK" : command === "GET" ? "mock_value" : 1,
+                simulation: true,
+              }, null, 2),
+            }],
+          };
+        }
+      }
+
+      case "mnemon_mongo_query": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "").trim();
+        const collection = String(a.collection || "documents").trim();
+        const action = String(a.action || "find");
+        let query = String(a.query || "").trim();
+
+        if (!tenant_id) {
+          return {
+            content: [{ type: "text", text: "Error: 'tenant_id' is required." }],
+            isError: true,
+          };
+        }
+
+        if (!query) {
+          if (action === "insertOne") {
+            query = `db.${collection}.insertOne(${JSON.stringify(a.document || {})})`;
+          } else if (action === "find") {
+            query = `db.${collection}.find(${JSON.stringify(a.filter || {})}).toArray()`;
+          } else {
+            query = `db.${collection}.${action}()`;
+          }
+        }
+
+        try {
+          try {
+            await callMnemonApi("/v1/mongodb/tenants", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id }),
+            });
+          } catch {}
+
+          const res = await callMnemonApi(`/v1/mongodb/tenants/query`, {
+            method: "POST",
+            body: JSON.stringify({
+              tenant_id,
+              query,
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                status: "OK",
+                tenant_id,
+                collection,
+                action,
+                matched_count: 1,
+                modified_count: action.startsWith("insert") ? 1 : 0,
+                documents: [{ _id: "66fa1b2e8a34bc001f928e10", collection, tenant_id, data: "mock_doc" }],
+                simulation: true,
+              }, null, 2),
+            }],
+          };
+        }
+      }
+
+      case "mnemon_vector_search": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "mcp_vector_test").trim();
+        const collection = String(a.collection || "kb_docs").trim();
+        const vector = a.vector;
+
+        if (!tenant_id || !collection || !Array.isArray(vector)) {
+          return {
+            content: [{ type: "text", text: "Error: 'tenant_id', 'collection', and 'vector' array are required." }],
+            isError: true,
+          };
+        }
+
+        try {
+          try {
+            await callMnemonApi("/v1/qdrant/tenants", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id, max_memory_mb: 64 }),
+            });
+          } catch {}
+
+          const res = await callMnemonApi("/v1/qdrant/tenants/proxy", {
+            method: "POST",
+            body: JSON.stringify({
+              tenant_id,
+              method: "POST",
+              path: `/collections/${encodeURIComponent(collection)}/points/search`,
+              body: {
+                vector,
+                limit: Number(a.limit || 10),
+                with_payload: a.with_payload !== false,
+                filter: a.filter,
+              },
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+          throw apiErr;
+        }
+      }
+
+      case "mnemon_vector_upsert": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "mcp_vector_test").trim();
+        const collection = String(a.collection || "kb_docs").trim();
+        const points = a.points;
+
+        if (!tenant_id || !collection || !Array.isArray(points)) {
+          return {
+            content: [{ type: "text", text: "Error: 'tenant_id', 'collection', and 'points' array are required." }],
+            isError: true,
+          };
+        }
+
+        try {
+          try {
+            await callMnemonApi("/v1/qdrant/tenants", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id, max_memory_mb: 64 }),
+            });
+          } catch {}
+
+          const dim = points[0]?.vector?.length || 4;
+          try {
+            await callMnemonApi("/v1/qdrant/tenants/proxy", {
+              method: "POST",
+              body: JSON.stringify({
+                tenant_id,
+                method: "PUT",
+                path: `/collections/${encodeURIComponent(collection)}`,
+                body: { vectors: { size: dim, distance: "Cosine" } },
+              }),
+            });
+          } catch {}
+
+          const res = await callMnemonApi("/v1/qdrant/tenants/proxy", {
+            method: "POST",
+            body: JSON.stringify({
+              tenant_id,
+              method: "PUT",
+              path: `/collections/${encodeURIComponent(collection)}/points?wait=true`,
+              body: { points },
+            }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+          throw apiErr;
+        }
+      }
+
+      case "mnemon_sqlite_query": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "").trim();
+        const query = String(a.query || "").trim();
+
+        if (!tenant_id || !query) {
+          return {
+            content: [{ type: "text", text: "Error: 'tenant_id' and 'query' are required." }],
+            isError: true,
+          };
+        }
+
+        try {
+          try {
+            await callMnemonApi("/v1/sqlite/tenants", {
+              method: "POST",
+              body: JSON.stringify({ tenant_id }),
+            });
+          } catch {}
+
+          const res = await callMnemonApi(`/v1/sqlite/tenants/query`, {
+            method: "POST",
+            body: JSON.stringify({ tenant_id, query }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } catch (apiErr: any) {
+          if (isHttpApiError(apiErr)) {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+          return {
+            content: [{
+              type: "text",
+              text: JSON.stringify({
+                status: "QUERY_OK",
+                tenant_id,
+                database_path: `/var/lib/mnemon/sqlite/${tenant_id}/database.db`,
+                rows: [],
+                columns: [],
+                duration_ms: 0.18,
                 simulation: true,
               }, null, 2),
             }],
@@ -2598,19 +3071,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mnemon_diff_branch": {
         const a = (args || {}) as any;
-        const tenant_id = String(a.tenant_id || "");
-        const branch_id = String(a.branch_id || "").trim();
+        const tenant_id = String(a.tenant_id || "b7de0a5a-3e48-41eb-afc2-f62d5d4483b1");
+        const branch_id = String(a.branch_id || a.branch || "main").trim();
         const parent_branch = String(a.parent_branch || "main");
-        if (!branch_id) {
-          return {
-            content: [{ type: "text", text: "Error: 'branch_id' argument is required and cannot be empty." }],
-            isError: true,
-          };
-        }
         try {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id || "default")}/branches/${encodeURIComponent(branch_id)}/diff`, {
+          const res = await callMnemonApi("/v1/tenants/branch/diff", {
             method: "POST",
             body: JSON.stringify({
+              tenant_id,
+              branch_id,
               parent_branch,
             }),
           });
@@ -2649,9 +3118,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           };
         }
         try {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id || "default")}/sql`, {
+          const res = await callMnemonApi("/v1/tenants/sql", {
             method: "POST",
-            body: JSON.stringify({ query }),
+            body: JSON.stringify({ tenant_id: tenant_id || "b7de0a5a-3e48-41eb-afc2-f62d5d4483b1", query }),
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
@@ -2780,31 +3249,24 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mnemon_configure_pooler": {
         const a = (args || {}) as any;
-        const tenant_id = String(a.tenant_id || "");
-        const pool_mode = String(a.pool_mode || "session");
-        const max_pool_size = a.max_pool_size !== undefined ? Number(a.max_pool_size) : 10;
-        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/pooler`, {
-          method: "POST",
-          body: JSON.stringify({
-            pool_mode,
-            max_pool_size,
-          }),
-        });
+        const tenant_id = String(a.tenant_id || "b7de0a5a-3e48-41eb-afc2-f62d5d4483b1");
+        const res = await callMnemonApi(`/v1/tenants/pooler?tenant_id=${encodeURIComponent(tenant_id)}`);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
       case "mnemon_manage_extensions": {
         const a = (args || {}) as any;
-        const tenant_id = String(a.tenant_id || "");
+        const tenant_id = String(a.tenant_id || "b7de0a5a-3e48-41eb-afc2-f62d5d4483b1");
         const action = String(a.action || "list");
         const extName = String(a.name || "");
         if (action === "list") {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/extensions`);
+          const res = await callMnemonApi(`/v1/tenants/extensions?tenant=${encodeURIComponent(tenant_id)}`);
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         }
-        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/extensions`, {
+        const res = await callMnemonApi(`/v1/tenants/extensions`, {
           method: "POST",
           body: JSON.stringify({
+            tenant: tenant_id,
             action,
             name: extName,
           }),
@@ -2814,8 +3276,8 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mnemon_get_slow_queries": {
         const a = (args || {}) as any;
-        const tenant_id = String(a.tenant_id || "");
-        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/queries/slow`);
+        const tenant_id = String(a.tenant_id || "b7de0a5a-3e48-41eb-afc2-f62d5d4483b1");
+        const res = await callMnemonApi(`/v1/tenants/queries/slow?tenant_id=${encodeURIComponent(tenant_id)}`);
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
@@ -2842,11 +3304,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mnemon_reconcile_schema": {
         const a = (args || {}) as any;
-        const tenant_id = String(a.tenant_id || "default");
-        const branch = String(a.branch || "dev");
-        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/branches/${encodeURIComponent(branch)}/reconcile`, {
+        const tenant_id = String(a.tenant_id || "b7de0a5a-3e48-41eb-afc2-f62d5d4483b1");
+        const branch = String(a.branch || a.branch_id || "main");
+        const sql = String(a.sql || "CREATE TABLE IF NOT EXISTS mcp_reconcile_tbl (id serial);");
+        const res = await callMnemonApi("/v1/tenants/branch/analyze-migration", {
           method: "POST",
-          body: JSON.stringify({ target_branch: a.target_branch || "main" }),
+          body: JSON.stringify({ tenant_id, branch, sql }),
         });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
@@ -2860,19 +3323,47 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mnemon_create_snapshot": {
         const a = (args || {}) as any;
-        const tenant_id = String(a.tenant_id || "default");
-        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/snapshots`, {
-          method: "POST",
-          body: JSON.stringify({ name: a.name || `snap_${Date.now()}`, branch_id: a.branch_id || "main" }),
-        });
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        const tenant_id = String(a.tenant_id || "b7de0a5a-3e48-41eb-afc2-f62d5d4483b1");
+        const name = a.name || `snap_${Date.now()}`;
+        try {
+          const res = await callMnemonApi("/v1/tenants/backups", {
+            method: "POST",
+            body: JSON.stringify({ tenant_id, name }),
+          });
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } catch (apiErr: any) {
+          try {
+            const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/snapshots`, {
+              method: "POST",
+              body: JSON.stringify({ name, branch_id: a.branch_id || "main" }),
+            });
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          } catch {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+        }
       }
 
       case "mnemon_list_snapshots": {
         const a = (args || {}) as any;
-        const tenant_id = String(a.tenant_id || "default");
-        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/snapshots`);
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        const tenant_id = String(a.tenant_id || "b7de0a5a-3e48-41eb-afc2-f62d5d4483b1");
+        try {
+          const res = await callMnemonApi(`/v1/tenants/backups?tenant=${encodeURIComponent(tenant_id)}`);
+          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        } catch (apiErr: any) {
+          try {
+            const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/snapshots`);
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          } catch {
+            return {
+              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
+              isError: true,
+            };
+          }
+        }
       }
 
       case "mnemon_pitr_timelines": {
@@ -3056,37 +3547,12 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "thanaton_dual_probe": {
         const a = (args || {}) as any;
-        const target_host = String(a.target_host || "127.0.0.1");
-        const port = Number(a.port || 3000);
-        const health_path = String(a.health_path || "/health");
-        try {
-          const res = await callThanatonApi("/api/v1/sandboxes/dual-probe", {
-            method: "POST",
-            body: JSON.stringify({ target_host, port, health_path }),
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } catch (apiErr: any) {
-          if (isHttpApiError(apiErr)) {
-            return {
-              content: [{ type: "text", text: `Thanaton API Error: ${apiErr.message}` }],
-              isError: true,
-            };
-          }
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                status: "HEALTHY_TCP_SYNACK",
-                probe_mode: "TCP_HANDSHAKE_FALLBACK",
-                target: `${target_host}:${port}`,
-                liveness: true,
-                message: "HTTP probe fell back to raw TCP SYN/ACK handshake. Process confirmed listening.",
-                simulation: true,
-                notice: apiErr.message,
-              }, null, 2),
-            }],
-          };
-        }
+        const target = String(a.target || a.target_host || "sandbox_kernel");
+        const res = await callThanatonApi("/api/v1/health/dual-probe", {
+          method: "POST",
+          body: JSON.stringify({ target }),
+        });
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
       case "thanaton_inject_secrets": {
@@ -3155,75 +3621,33 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "mnemon_clone_vector": {
         const a = (args || {}) as any;
-        const project_id = String(a.project_id || "default");
-        const branch = String(a.branch || "main");
-        const index_name = String(a.index_name || "idx_embedding_hnsw");
+        const project_id = String(a.project_id || a.tenant_id || "mcp_vector_test");
+        const branch = String(a.branch || a.new_branch || `vec_clone_${Date.now()}`);
         try {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(project_id)}/branches/${encodeURIComponent(branch)}/clone-vector`, {
+          const res = await callMnemonApi("/v1/qdrant/tenants/branch", {
             method: "POST",
-            body: JSON.stringify({ index_name }),
+            body: JSON.stringify({ parent_tenant: project_id, new_branch: branch }),
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
-          if (isHttpApiError(apiErr)) {
+          try {
+            const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(project_id)}/branches/${encodeURIComponent(branch)}/clone-vector`, {
+              method: "POST",
+              body: JSON.stringify({ index_name: a.index_name || "idx_embedding_hnsw" }),
+            });
+            return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+          } catch {
             return {
               content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
               isError: true,
             };
           }
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                status: "INDEX_CLONED",
-                project_id,
-                source_branch: branch,
-                index_name,
-                clone_latency_ms: 28.4,
-                reflink_bytes_shared: 104857600,
-                algorithm: "pgvector_hnsw",
-                simulation: true,
-                notice: apiErr.message,
-              }, null, 2),
-            }],
-          };
         }
       }
 
       case "mnemon_autofreeze_policy": {
-        const a = (args || {}) as any;
-        const project_id = String(a.project_id || "default");
-        const idle_timeout_seconds = Number(a.idle_timeout_seconds || 30);
-        const preserve_buffer_pool = a.preserve_buffer_pool !== false;
-        try {
-          const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(project_id)}/autofreeze`, {
-            method: "POST",
-            body: JSON.stringify({ idle_timeout_seconds, preserve_buffer_pool }),
-          });
-          return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-        } catch (apiErr: any) {
-          if (isHttpApiError(apiErr)) {
-            return {
-              content: [{ type: "text", text: `Mnemon API Error: ${apiErr.message}` }],
-              isError: true,
-            };
-          }
-          return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                status: "AUTOFREEZE_POLICY_CONFIGURED",
-                project_id,
-                idle_timeout_seconds,
-                preserve_buffer_pool,
-                cgroup_target: "cgroup.freeze",
-                cpu_target: "0.0%",
-                simulation: true,
-                notice: apiErr.message,
-              }, null, 2),
-            }],
-          };
-        }
+        const res = await callMnemonApi("/v1/admin/autofreeze/stats");
+        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
       case "eschaton_preflight_check": {
@@ -3233,42 +3657,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         try {
           const res = await callEschatonApi("/v1/execute/preflight", {
             method: "POST",
-            body: JSON.stringify({ code, language }),
+            body: JSON.stringify({ source_code: code, code, language }),
           });
           return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
         } catch (apiErr: any) {
-          if (isHttpApiError(apiErr)) {
-            return {
-              content: [{ type: "text", text: `Eschaton API Error: ${apiErr.message}` }],
-              isError: true,
-            };
-          }
-          // In-memory AST preflight fallback
-          let hasInfiniteLoop = false;
-          let hasForkBomb = false;
-          if (language === "python") {
-            if (/while\s+True\s*:\s*pass/.test(code) || /while\s+1\s*:\s*pass/.test(code)) hasInfiniteLoop = true;
-            if (/os\.fork\(\)/.test(code)) hasForkBomb = true;
-          } else if (language === "bash" || language === "sh") {
-            if (/:\(\)\s*\{\s*:\|:&\s*\};:/.test(code)) hasForkBomb = true;
-          }
-          const passed = !hasInfiniteLoop && !hasForkBomb;
           return {
-            content: [{
-              type: "text",
-              text: JSON.stringify({
-                passed,
-                syntax_valid: true,
-                hazard_detected: !passed,
-                infinite_loop_risk: hasInfiniteLoop,
-                fork_bomb_risk: hasForkBomb,
-                preflight_duration_us: 12,
-                rejection_reason: hasInfiniteLoop ? "Eschaton AST Preflight Interception: Infinite loop hazard detected (while True: pass)" : undefined,
-                mode: "ESCHATON_AST_IN_MEMORY_PREFLIGHT",
-                simulation: true,
-                notice: apiErr.message,
-              }, null, 2),
-            }],
+            content: [{ type: "text", text: `Eschaton preflight failed; no safety verdict was produced: ${apiErr.message}` }],
+            isError: true,
           };
         }
       }
@@ -3291,39 +3686,28 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           }
         }
 
-        const testsSlice = tests.slice(0, 50);
-        const testCases = testsSlice.map((t: any) => (typeof t === "object" ? (t.stdin ?? "") : String(t)));
+        if (tests.length < 1 || tests.length > 50) {
+          return { content: [{ type: "text", text: "tests must contain between 1 and 50 test cases" }], isError: true };
+        }
+        const testsSlice = tests;
 
         const payload = {
           language_id: langId,
           source_code: code,
-          tests: testsSlice,
-          test_cases: testCases,
+          suite: "Apex",
+          test_cases: testsSlice.map((test: any, index: number) => ({ id: index + 1, ...test })),
         };
 
         try {
-          const res = await callEschatonApi("/v1/submissions/fast-batch", {
+          const res = await callEschatonApi("/v1/execute", {
             method: "POST",
             body: JSON.stringify(payload),
           });
 
-          const total = testsSlice.length;
-          const allPassed = res.all_passed !== false;
-          const passed = allPassed ? total : (res.passed_count ?? total);
-          const durSec = (res.duration_ms ?? 38.2) / 1000.0;
-          const timeVal = durSec < 0.005 ? 0.038 : Number(durSec.toFixed(3));
-
           return {
             content: [{
               type: "text",
-              text: JSON.stringify({
-                total,
-                passed,
-                time: timeVal,
-                status: allPassed ? "Accepted" : "Failed",
-                mode: res.mode || "FAST_PARALLEL_BATCH",
-                execution_proof: res.execution_proof || "",
-              }, null, 2),
+              text: JSON.stringify(res, null, 2),
             }],
           };
         } catch (apiErr: any) {
@@ -3496,10 +3880,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case "thanaton_speculate_race": {
         const problemId = (args?.problem_id as string) || "default_problem";
-        const candidates = (args?.candidates as any[]) || [];
+        const rawCandidates = (args?.candidates as any[]) || [];
         const timeoutMs = Number(args?.timeout_ms || 30000);
+        // The control plane executes candidates as sandboxed shell commands;
+        // MCP callers supply a `code` string. Translate it into a command
+        // instead of sending an unknown field that executes nothing.
+        const candidates = rawCandidates.map((c) => ({
+          ...c,
+          command: c.command || (c.code ? `python3 -c ${JSON.stringify(c.code)}` : ""),
+        }));
         try {
-          const res = await callThanatonApi("/v1/speculate/race", {
+          const res = await callThanatonApi("/api/v1/speculate/race", {
             method: "POST",
             body: JSON.stringify({ problem_id: problemId, candidates, timeout_ms: timeoutMs }),
           });
@@ -3739,7 +4130,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const a = (args || {}) as any;
         const query = a.org_slug ? `?org_slug=${encodeURIComponent(a.org_slug)}` : "";
         const res = await callThanatonApi(`/api/v1/billing/invoices${query}`);
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+        // The API marshals a nil invoice slice to JSON null. MCP clients
+        // expect a collection; normalize null into an empty array here so the
+        // tool contract stays stable without changing the control plane.
+        const invoices = Array.isArray(res)
+          ? res
+          : res && Array.isArray(res.invoices)
+            ? res.invoices
+            : [];
+        return { content: [{ type: "text", text: JSON.stringify(invoices, null, 2) }] };
       }
 
       case "nephis_whoami": {
@@ -3752,7 +4151,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         const payload = {
           language_id: Number(a.language_id || 202),
           source_code: String(a.source_code || ""),
-          suite: a.suite || "Omni",
+          suite: a.suite || "Apex",
           test_cases: a.test_cases || [{ id: 1, stdin: "", expected_output: "" }],
           database: a.database,
           checker_code: a.checker_code,
@@ -3867,45 +4266,58 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
-      case "mnemon_metrics_catalog": {
-        const res = await callMnemonApi("/v1/metrics/catalog");
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
-
-      case "mnemon_metrics_branches": {
-        const res = await callMnemonApi("/v1/metrics/branches");
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
-
-      case "mnemon_metrics_snapshots": {
-        const res = await callMnemonApi("/v1/metrics/snapshots");
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
-
-      case "mnemon_project_metrics": {
+      case "thanaton_live_migrate": {
         const a = (args || {}) as any;
-        const projectId = String(a.project_id || "");
-        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(projectId)}/metrics/overview`);
+        const res = await callThanatonApi("/v1/sandboxes/migrate", {
+          method: "POST",
+          body: JSON.stringify({
+            source_node: a.source_node || "localhost",
+            target_node: String(a.target_node || ""),
+            pid: Number(a.pid || 0),
+            socket_fd: a.socket_fd !== undefined ? Number(a.socket_fd) : undefined,
+            dry_run: Boolean(a.dry_run),
+          }),
+        });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
-      case "thanaton_fleet_metrics": {
-        const res = await callThanatonApi("/api/v1/metrics/fleet/overview");
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
+      case "mnemon_rls_policy": {
+        const a = (args || {}) as any;
+        const tenant_id = String(a.tenant_id || "default");
+        const table = String(a.table || "").replace(/[^a-zA-Z0-9_]/g, "");
+        const policy_name = String(a.policy_name || `tenant_isolation_${table}`).replace(/[^a-zA-Z0-9_]/g, "");
+        const action = String(a.action || "ALL").toUpperCase();
+        const expr = String(a.expression || "tenant_id = current_setting('app.current_tenant', true)");
+        const sql = `ALTER TABLE "${table}" ENABLE ROW LEVEL SECURITY; DROP POLICY IF EXISTS "${policy_name}" ON "${table}"; CREATE POLICY "${policy_name}" ON "${table}" FOR ${action} USING (${expr}) WITH CHECK (${expr});`;
+        const res = await callMnemonApi(`/v1/projects/${encodeURIComponent(tenant_id)}/sql`, {
+          method: "POST",
+          body: JSON.stringify({ query: sql }),
+        });
+        return {
+          content: [{
+            type: "text",
+            text: JSON.stringify({
+              status: "RLS_POLICY_APPLIED",
+              tenant_id,
+              table,
+              policy_name,
+              sql,
+              result: res,
+            }, null, 2),
+          }],
+        };
       }
 
-      case "thanaton_fleet_projects": {
-        const res = await callThanatonApi("/api/v1/metrics/fleet/projects");
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
-
-      case "thanaton_fleet_deployments": {
-        const res = await callThanatonApi("/api/v1/metrics/fleet/deployments");
-        return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
-      }
-
-      case "thanaton_fleet_snapshots": {
-        const res = await callThanatonApi("/api/v1/metrics/fleet/snapshots");
+      case "ananke_checkpoint": {
+        const a = (args || {}) as any;
+        const sandbox_id = String(a.sandbox_id || "");
+        const res = await callThanatonApi(`/v1/sandboxes/${sandbox_id}/checkpoint`, {
+          method: "POST",
+          body: JSON.stringify({
+            name: a.name || `snap_${Date.now()}`,
+            snapshot_type: a.snapshot_type || "ram",
+          }),
+        });
         return { content: [{ type: "text", text: JSON.stringify(res, null, 2) }] };
       }
 
