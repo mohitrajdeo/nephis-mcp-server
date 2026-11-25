@@ -16,25 +16,24 @@ def test_mnemon_init():
     assert headers["X-API-Key"] == "nephis_live_test123"
 
 
-@patch("requests.get")
-def test_schema_diff(mock_get):
+@patch("requests.post")
+def test_schema_diff(mock_post):
     mock_resp = MagicMock()
     mock_resp.ok = True
     mock_resp.json.return_value = {
         "diff": "ALTER TABLE users ADD COLUMN phone text;",
         "migration_ddl": "ALTER TABLE users ADD COLUMN phone text;",
     }
-    mock_get.return_value = mock_resp
+    mock_post.return_value = mock_resp
 
     client = MnemonClient(api_key="test-key")
     res = client.schema_diff("tenant1", "feat_branch", parent_branch="main")
 
     assert "ALTER TABLE" in res["diff"]
-    mock_get.assert_called_once()
-    args, kwargs = mock_get.call_args
-    assert "v1/tenants/branch/diff" in args[0]
-    assert kwargs["params"]["tenant_id"] == "tenant1"
-    assert kwargs["params"]["branch_id"] == "feat_branch"
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert "v1/projects/tenant1/branches/feat_branch/diff" in args[0]
+    assert kwargs["json"] == {}
 
 
 @patch("requests.post")
@@ -51,9 +50,8 @@ def test_reset_branch(mock_post):
     assert res["duration_ms"] == 12.5
     mock_post.assert_called_once()
     args, kwargs = mock_post.call_args
-    assert "v1/tenants/branch/reset" in args[0]
-    assert kwargs["json"]["tenant_id"] == "tenant1"
-    assert kwargs["json"]["branch_id"] == "feat_branch"
+    assert "v1/projects/tenant1/branches/feat_branch/reset" in args[0]
+    assert kwargs["json"] == {}
 
 
 @patch("requests.post")
@@ -62,40 +60,24 @@ def test_time_travel(mock_post):
     mock_resp.ok = True
     mock_resp.json.return_value = {
         "status": "ok",
-        "branch_id": "backup_point",
-        "database_url": "postgresql://postgres:secret@127.0.0.1:5432/backup_point",
+        "branch_name": "backup_point",
     }
     mock_post.return_value = mock_resp
 
     client = MnemonClient(api_key="test-key")
     res = client.time_travel("tenant1", "backup_point", "2026-11-13T10:00:00Z")
 
-    assert res["branch_id"] == "backup_point"
-    assert "backup_point" in res["database_url"]
+    assert res["branch_name"] == "backup_point"
     mock_post.assert_called_once()
     args, kwargs = mock_post.call_args
-    assert "v1/tenants/branch/time-travel" in args[0]
+    assert "v1/projects/tenant1/branches/time-travel" in args[0]
+    assert kwargs["json"] == {"branch_name": "backup_point", "target_time": "2026-11-13T10:00:00Z"}
 
 
-@patch("requests.post")
-def test_search(mock_post):
-    mock_resp = MagicMock()
-    mock_resp.ok = True
-    mock_resp.json.return_value = {
-        "rows": [{"id": 1, "title": "test"}],
-        "index_mode": "bm25",
-        "query": "test query",
-    }
-    mock_post.return_value = mock_resp
-
+def test_search_fails_explicitly_without_provider_endpoint():
     client = MnemonClient(api_key="test-key")
-    res = client.search("tenant1", "documents", "test query", columns=["id", "title"])
-
-    assert res["index_mode"] == "bm25"
-    assert len(res["rows"]) == 1
-    mock_post.assert_called_once()
-    args, kwargs = mock_post.call_args
-    assert "v1/tenants/search" in args[0]
+    with pytest.raises(NotImplementedError):
+        client.search("tenant1", "documents", "test query", columns=["id", "title"])
 
 
 @patch("requests.put")
@@ -225,7 +207,7 @@ def test_pitr_and_snapshots(mock_get, mock_post):
 @patch("requests.post")
 @patch("requests.get")
 def test_mnemon_admin_and_scaling(mock_get, mock_post):
-    client = MnemonClient(api_url="http://localhost:9090", api_key="nephis_live_admin")
+    client = MnemonClient(api_url="http://localhost:9090", api_key="test-admin")
 
     # 1. configure_scaling
     mock_post_scale = MagicMock()
@@ -234,6 +216,8 @@ def test_mnemon_admin_and_scaling(mock_get, mock_post):
     mock_post.return_value = mock_post_scale
     res = client.configure_scaling("prj_1", min_acu=1, max_acu=4)
     assert res["status"] == "configured"
+    assert mock_post.call_args.kwargs["json"]["idle_suspend_seconds"] == 300
+    assert "auto_freeze_sec" not in mock_post.call_args.kwargs["json"]
 
     # 2. kill_query
     mock_post_kill = MagicMock()
@@ -262,67 +246,202 @@ def test_mnemon_admin_and_scaling(mock_get, mock_post):
     # 5. IP allowlist
     mock_get_ip = MagicMock()
     mock_get_ip.ok = True
-    mock_get_ip.json.return_value = {"cidrs": ["10.0.0.0/8"]}
+    mock_get_ip.json.return_value = {"ip_allowlist": {"allowed_ips": ["10.0.0.0/8"]}}
     mock_get.return_value = mock_get_ip
     res = client.get_ip_allowlist("prj_1")
-    assert "10.0.0.0/8" in res["cidrs"]
+    assert "10.0.0.0/8" in res["ip_allowlist"]["allowed_ips"]
 
 
 @patch("requests.post")
-def test_mnemon_v107_features(mock_post):
-    client = MnemonClient(api_url="http://localhost:9090", api_key="nephis_live_test")
-
-    # 1. PII Masking & LSN Branching
+def test_branch_database_uses_supported_project_route(mock_post):
+    client = MnemonClient(api_url="http://localhost:9090", api_key="test-key")
     mock_post.return_value.ok = True
     mock_post.return_value.json.return_value = {
-        "status": "branched",
-        "branch_id": "feat_pii",
-        "mask_pii": True,
-        "target_lsn": "0/16B3740",
+        "id": "br_prj_1_feat",
+        "name": "feat",
+        "target_lsn": 23803712,
     }
     res_branch = client.branch_database(
-        tenant_id="tenant_alpha",
-        new_branch="feat_pii",
-        mask_pii=True,
+        tenant_id="prj_1",
+        new_branch="feat",
         target_lsn="0/16B3740",
     )
-    assert res_branch["mask_pii"] is True
-    assert res_branch["branch_id"] == "feat_pii"
+    assert res_branch["name"] == "feat"
     mock_post.assert_called_with(
-        "http://localhost:9090/v1/tenants/branch",
-        json={"tenant_id": "tenant_alpha", "new_branch": "feat_pii", "parent_branch": "main", "mask_pii": True, "target_lsn": "0/16B3740"},
+        "http://localhost:9090/v1/projects/prj_1/branches",
+        json={"name": "feat", "parent_branch": "main", "target_lsn": 23803712},
         headers=client._headers(),
         timeout=30,
     )
 
-    # 2. Fast-Forward Branch Merge
-    mock_post.return_value.json.return_value = {
-        "status": "merged",
-        "merged_tables": 3,
-        "target_branch": "main",
-    }
-    res_merge = client.merge_branch(
-        tenant_id="tenant_alpha",
-        branch_id="feat_pii",
-        parent_branch="main",
-    )
-    assert res_merge["status"] == "merged"
-    assert res_merge["merged_tables"] == 3
+    with pytest.raises(NotImplementedError):
+        client.branch_database(tenant_id="prj_1", new_branch="pii", mask_pii=True)
+    with pytest.raises(NotImplementedError):
+        client.merge_branch(tenant_id="prj_1", branch_id="feat")
 
-    # 3. Inline Time-Travel SQL Querying
-    mock_post.return_value.json.return_value = {
-        "output": "[{\"id\": 1, \"balance\": 500}]",
-        "duration_ms": 14.2,
-    }
-    res_query = client.query(
-        tenant_id="tenant_alpha",
-        sql="SELECT * FROM balances WHERE id = 1;",
-        as_of_lsn="0/16B3740",
+
+@patch("requests.post")
+def test_query_uses_project_scoped_sql_route_and_rejects_fake_time_travel(mock_post):
+    mock_resp = MagicMock()
+    mock_resp.ok = True
+    mock_resp.json.return_value = {"rows": [{"answer": 1}], "duration_ms": 2.0}
+    mock_post.return_value = mock_resp
+    client = MnemonClient(api_url="http://localhost:9090", api_key="test-key")
+    result = client.query("prj_1", "SELECT 1")
+    assert result.output == '[{"answer":1}]'
+    assert result.duration_ms == 2.0
+    args, kwargs = mock_post.call_args
+    assert args[0] == "http://localhost:9090/v1/projects/prj_1/sql"
+    assert kwargs["json"] == {"query": "SELECT 1"}
+    with pytest.raises(NotImplementedError):
+        client.query("prj_1", "SELECT 1", as_of_lsn="0/1")
+
+
+@patch("requests.post")
+def test_create_database_uses_project_route_without_invented_connection_string(mock_post):
+    mock_resp = MagicMock()
+    mock_resp.ok = True
+    mock_resp.json.return_value = {"id": "mn_prj_tenant_a_tenant_a", "tenant_id": "tenant_a"}
+    mock_post.return_value = mock_resp
+    client = MnemonClient(api_url="http://localhost:9090", api_key="test-key")
+    result = client.create_database("tenant_a")
+    assert "connection_string" not in result
+    args, kwargs = mock_post.call_args
+    assert args[0] == "http://localhost:9090/v1/projects"
+    assert kwargs["json"] == {"name": "tenant_a", "tenant_id": "tenant_a", "region": "us-east-1"}
+
+
+def test_live_tenant_database_listing():
+    from live_config import MNEMON_URL, get_live_api_key
+    client = MnemonClient(api_url=MNEMON_URL, api_key=get_live_api_key())
+    dbs = client.list_databases()
+    assert isinstance(dbs, list)
+
+
+def test_live_sqlite_query_and_execution():
+    from live_config import MNEMON_URL, get_live_api_key
+    client = MnemonClient(api_url=MNEMON_URL, api_key=get_live_api_key())
+    client.sqlite_provision("test_live_py")
+    res = client.sqlite_query("test_live_py", "SELECT 42 as answer;")
+    assert res["status"] == "success"
+    assert res["result"] == [{"answer": 42}]
+    assert res["duration_ms"] > 0
+
+
+def test_live_postgresql_sql_execution():
+    import urllib.request, json, ssl
+    from live_config import NEPHIS_URL, get_live_api_key, _DEFAULT_SSL_CTX
+    api_key = get_live_api_key()
+    url = f"{NEPHIS_URL}/v1/db/v1/tenants/sql"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps({"tenant_id": "live_db", "query": "SELECT 1 as num;"}).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "X-API-Key": api_key,
+            "Authorization": f"Bearer {api_key}"
+        },
+        method="POST"
     )
-    assert res_query.output == "[{\"id\": 1, \"balance\": 500}]"
-    assert res_query.duration_ms == 14.2
-    call_args = mock_post.call_args
-    assert call_args[1]["json"]["as_of_lsn"] == "0/16B3740"
+    with urllib.request.urlopen(req, timeout=10, context=_DEFAULT_SSL_CTX) as resp:
+        res = json.loads(resp.read().decode())
+        assert res.get("status") == "success"
+        assert res.get("row_count") == 1
+        assert res.get("rows") == [{"num": 1}]
+        assert res.get("duration_ms") > 0
+
+
+def test_live_zero_copy_reflink_branching():
+    import urllib.request, json, ssl, time
+    from live_config import NEPHIS_URL, get_live_api_key, _DEFAULT_SSL_CTX
+    api_key = get_live_api_key()
+    branch_name = f"test_br_{int(time.time())}"
+    url = f"{NEPHIS_URL}/v1/db/v1/tenants/branch"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps({"tenant_id": "live_db", "new_branch": branch_name, "parent_branch": "main"}).encode(),
+        headers={
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            "X-API-Key": api_key,
+            "Authorization": f"Bearer {api_key}"
+        },
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=10, context=_DEFAULT_SSL_CTX) as resp:
+        res = json.loads(resp.read().decode())
+        assert res.get("branch_id") == branch_name
+        assert res.get("port") > 16000
+        assert res.get("parent_branch_id") in ["main", None]
+
+
+def test_live_redis_execution():
+    import urllib.request, json, time
+    from live_config import get_live_api_key, _DEFAULT_SSL_CTX
+    api_key = get_live_api_key()
+    tenant = f"py_rd_{int(time.time())}"
+    base = "https://mnemon.theeducode.com"
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "X-API-Key": api_key,
+        "Authorization": f"Bearer {api_key}"
+    }
+
+    # 1. Provision Redis tenant
+    prov_req = urllib.request.Request(f"{base}/v1/redis/tenants", data=json.dumps({"tenant_id": tenant, "max_memory_mb": 16}).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(prov_req, timeout=10, context=_DEFAULT_SSL_CTX) as resp:
+        prov = json.loads(resp.read().decode())
+        assert prov.get("status") in ["created", "success"]
+
+    # 2. SET command
+    set_req = urllib.request.Request(f"{base}/v1/redis/tenants/query", data=json.dumps({"tenant_id": tenant, "command": ["SET", "py_live_token", "LIVE_PY_REDIS_PASS"]}).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(set_req, timeout=10, context=_DEFAULT_SSL_CTX) as resp:
+        res_set = json.loads(resp.read().decode())
+        assert res_set.get("status") == "success"
+
+    # 3. GET command
+    get_req = urllib.request.Request(f"{base}/v1/redis/tenants/query", data=json.dumps({"tenant_id": tenant, "command": ["GET", "py_live_token"]}).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(get_req, timeout=10, context=_DEFAULT_SSL_CTX) as resp:
+        res_get = json.loads(resp.read().decode())
+        assert res_get.get("status") == "success"
+        assert res_get.get("result") == "LIVE_PY_REDIS_PASS"
+
+
+def test_live_mongodb_execution():
+    import urllib.request, json, time
+    from live_config import get_live_api_key, _DEFAULT_SSL_CTX
+    api_key = get_live_api_key()
+    tenant = f"py_mg_{int(time.time())}"
+    base = "https://mnemon.theeducode.com"
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+        "X-API-Key": api_key,
+        "Authorization": f"Bearer {api_key}"
+    }
+
+    # 1. Provision Mongo tenant
+    prov_req = urllib.request.Request(f"{base}/v1/mongodb/tenants", data=json.dumps({"tenant_id": tenant, "memory_max_mb": 64}).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(prov_req, timeout=10, context=_DEFAULT_SSL_CTX) as resp:
+        prov = json.loads(resp.read().decode())
+        assert prov.get("status") in ["created", "success"]
+
+    # 2. Insert document
+    ins_req = urllib.request.Request(f"{base}/v1/mongodb/tenants/query", data=json.dumps({"tenant_id": tenant, "query": "db.py_bench.insertOne({framework: 'pytest', status: 'pass'})"}).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(ins_req, timeout=10, context=_DEFAULT_SSL_CTX) as resp:
+        ins = json.loads(resp.read().decode())
+        assert ins.get("status") == "success"
+
+    # 3. Find document
+    find_req = urllib.request.Request(f"{base}/v1/mongodb/tenants/query", data=json.dumps({"tenant_id": tenant, "query": "db.py_bench.find().toArray()"}).encode(), headers=headers, method="POST")
+    with urllib.request.urlopen(find_req, timeout=10, context=_DEFAULT_SSL_CTX) as resp:
+        find = json.loads(resp.read().decode())
+        assert find.get("status") == "success"
+        assert len(find.get("result", [])) >= 1
+
+
 
 
 

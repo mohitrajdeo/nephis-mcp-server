@@ -1,6 +1,8 @@
 """Thanaton: Sub-6ms MicroVM Sandboxes and Execution Fabric for AI Coding Agents."""
 
-from .client import Client, SandboxManager
+from .client import Client, SandboxManager, ThanatonClient
+
+Thanaton = Client
 from .config import detect_project_runtime, generate_nephis_toml, parse_nephis_toml
 from .exceptions import (
     APIError,
@@ -22,6 +24,8 @@ from .sandbox import ExecResult, Sandbox
 __version__ = "1.0.0"
 __all__ = [
     "Client",
+    "ThanatonClient",
+    "Thanaton",
     "Sandbox",
     "SandboxManager",
     "ExecResult",

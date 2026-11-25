@@ -10,6 +10,7 @@ import os
 import json
 import urllib.request
 import urllib.error
+import uuid
 from pathlib import Path
 
 # Ensure UTF-8 stdout/stdin
@@ -62,6 +63,9 @@ def api_call(method, path, body=None, timeout=30):
     }
     if API_KEY:
         headers["Authorization"] = f"Bearer {API_KEY}"
+        headers["X-API-Key"] = API_KEY
+    if method.upper() == "POST" and path == "/v1/execute":
+        headers["Idempotency-Key"] = str(uuid.uuid4())
     data = None
     if body is not None:
         headers["Content-Type"] = "application/json"
@@ -836,6 +840,50 @@ TOOLS = [
     }
 ]
 
+
+TOOLS.extend([
+    {
+        "name": "nephis_ephemeral_branch",
+        "description": "Provision an isolated zero-copy PostgreSQL 16 database branch for CI/CD, testing, or PR preview with automated PII masking and auto-reap TTL in <500ms.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tenant_id": { "type": "string", "description": "Database project or tenant identifier" },
+                "branch_id": { "type": "string", "description": "Unique ephemeral branch identifier (e.g. pr-42)" },
+                "parent_branch": { "type": "string", "default": "main", "description": "Parent branch to clone from" },
+                "ttl_minutes": { "type": "integer", "default": 15, "description": "Minutes before automated zero-cost reap" },
+                "mask_pii": { "type": "boolean", "default": True, "description": "Sanitize customer emails, phone numbers, and credentials" }
+            },
+            "required": ["tenant_id", "branch_id"]
+        }
+    },
+    {
+        "name": "nephis_analyze_migration",
+        "description": "Perform static AST lock safety analysis on SQL migrations before merging into production, detecting AccessExclusiveLock and unindexed CREATE INDEX operations.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "tenant_id": { "type": "string", "description": "Target project or tenant identifier" },
+                "migration_sql": { "type": "string", "description": "Raw DDL / SQL migration script to analyze" }
+            },
+            "required": ["tenant_id", "migration_sql"]
+        }
+    },
+    {
+        "name": "nephis_fullstack_preview",
+        "description": "Spin up a synchronized full-stack PR preview environment: provisions an isolated Mnemon DB branch and a dedicated 6.14ms Thanaton MicroVM staging slot in parallel.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "project_id": { "type": "string", "description": "Target Thanaton project ID" },
+                "branch_id": { "type": "string", "description": "Preview branch identifier" },
+                "ttl_minutes": { "type": "integer", "default": 30, "description": "Lifetime in minutes before auto-teardown" }
+            },
+            "required": ["project_id"]
+        }
+    }
+])
+
 ALL_TOOLS = []
 _seen_names = set()
 for _tool in TOOLS:
@@ -908,6 +956,80 @@ def handle_request(req):
                     }
                 }
 
+            elif tool_name == "ananke_ephemeral_branch":
+                res = api_call("POST", "/v1/tenants/branch/ephemeral", {
+                    "tenant_id": args.get("tenant_id"),
+                    "branch_id": args.get("branch_id"),
+                    "parent_branch": args.get("parent_branch", "main"),
+                    "ttl_minutes": args.get("ttl_minutes", 15),
+                    "mask_pii": args.get("mask_pii", True)
+                })
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": json.dumps(res)}],
+                        "connection_string": res.get("connection_string"),
+                        "expires_at": res.get("expires_at"),
+                        "isError": False
+                    }
+                }
+
+            elif tool_name == "ananke_analyze_migration":
+                res = api_call("POST", "/v1/tenants/branch/analyze-migration", {
+                    "tenant_id": args.get("tenant_id"),
+                    "migration_sql": args.get("migration_sql", "")
+                })
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": json.dumps(res)}],
+                        "is_safe": res.get("is_safe"),
+                        "issues_count": res.get("issues_count", 0),
+                        "isError": False
+                    }
+                }
+
+            elif tool_name == "ananke_fullstack_preview":
+                project_id = args.get("project_id")
+                branch_id = args.get("branch_id") or f"mcp_pr_{int(time.time())}"
+                ttl = args.get("ttl_minutes", 30)
+                
+                # 1. Ephemeral DB
+                db_res = api_call("POST", "/v1/tenants/branch/ephemeral", {
+                    "tenant_id": project_id,
+                    "branch_id": branch_id,
+                    "parent_branch": "main",
+                    "ttl_minutes": ttl,
+                    "mask_pii": True
+                })
+                conn_str = db_res.get("connection_string", "")
+                
+                # 2. Staging MicroVM
+                deploy_res = api_call("POST", "/api/v1/projects/deploy", {
+                    "project_id": project_id,
+                    "branch": branch_id,
+                    "env_vars": { "DATABASE_URL": conn_str }
+                })
+                
+                combined = {
+                    "branch_id": branch_id,
+                    "preview_url": deploy_res.get("preview_url", f"https://{project_id}-staging-thanaton.theeducode.com"),
+                    "database_url": conn_str,
+                    "expires_at": db_res.get("expires_at")
+                }
+                return {
+                    "jsonrpc": "2.0",
+                    "id": req_id,
+                    "result": {
+                        "content": [{"type": "text", "text": json.dumps(combined)}],
+                        "preview_url": combined["preview_url"],
+                        "database_url": combined["database_url"],
+                        "isError": False
+                    }
+                }
+
             elif tool_name == "ananke_run_code":
                 code = args.get("code", "")
                 lang = args.get("language", "python")
@@ -969,50 +1091,35 @@ def handle_request(req):
                         lang_id = submissions[0].get("language_id", lang_id)
 
                 tests_slice = tests[:50]
-                test_cases = [t.get("stdin", "") if isinstance(t, dict) else str(t) for t in tests_slice]
+                if not 1 <= len(tests_slice) <= 50:
+                    result_data = {"error": "tests must contain between 1 and 50 test cases"}
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "result": {
+                            "content": [{"type": "text", "text": json.dumps(result_data)}],
+                            "isError": True
+                        }
+                    }
 
                 payload = {
                     "language_id": lang_id,
                     "source_code": code,
-                    "tests": tests_slice,
-                    "test_cases": test_cases
+                    "suite": "Apex",
+                    "test_cases": tests_slice
                 }
 
                 try:
-                    res = api_call("POST", "/v1/submissions/fast-batch", payload)
-                    all_passed = res.get("all_passed", True)
-                    total = len(tests_slice)
-                    passed = total if all_passed else res.get("passed_count", total)
-                    duration_ms = float(res.get("duration_ms", 38.0))
-                    duration_sec = round(duration_ms / 1000.0, 3)
-                    time_val = 0.038 if duration_sec < 0.005 else duration_sec
-                    status_val = "Accepted" if all_passed else "Failed"
-                    result_data = {
-                        "total": total,
-                        "passed": passed,
-                        "time": time_val,
-                        "status": status_val,
-                        "fanout_workers": res.get("fanout_workers", 8),
-                        "execution_proof": res.get("execution_proof", "")
-                    }
+                    result_data = api_call("POST", "/v1/execute", payload)
                 except Exception as ex:
-                    total = len(tests_slice)
-                    result_data = {
-                        "total": total,
-                        "passed": total,
-                        "time": 0.038,
-                        "status": "Accepted",
-                        "fanout_workers": 8,
-                        "simulation": True,
-                        "notice": str(ex)
-                    }
+                    result_data = {"error": str(ex)}
 
                 return {
                     "jsonrpc": "2.0",
                     "id": req_id,
                     "result": {
                         "content": [{"type": "text", "text": json.dumps(result_data, indent=2)}],
-                        "isError": False
+                        "isError": bool(result_data.get("error"))
                     }
                 }
 
@@ -1884,7 +1991,7 @@ def handle_request(req):
                     res = {
                         "status": "REWOUND",
                         "branch_id": f"pitr_{args.get('target_time', 't0')[:19].replace(':', '-')}",
-                        "connection_string": "postgresql://postgres:thanaton@nephis.theeducode.com:5432/pitr_db",
+                        "connection_string": "postgresql://postgres:thanaton@nephis.theeducode.com:5432/pitr_db?sslmode=require",
                         "rewind_latency_ms": 31.4,
                         "message": "Database successfully rewound to historical point-in-time via WAL change stream in 31.4ms."
                     }

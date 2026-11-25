@@ -1,8 +1,4 @@
-"""
-NEPHIS Autonomous Authentication & Zero-Human Bootstrap Client.
-Handles environment precedence, local credentials storage (~/.nephis/credentials.json),
-and automatic Hashcash Proof-of-Work (PoW) agent key claim.
-"""
+"""API key resolution and secure local credential storage for NEPHIS clients."""
 
 import hashlib
 import json
@@ -222,25 +218,20 @@ def bootstrap_agent_key(base_url: Optional[str] = None) -> Dict[str, Any]:
     if not api_key:
         raise RuntimeError("Server failed to issue api_key in claim response")
 
-    claim_link = f"https://nephis.theeducode.com/claim?key={api_key}"
     credentials = {
         "api_key": api_key,
         "tenant_id": claim_data.get("tenant_id", ""),
-        "tier": claim_data.get("tier", "free"),
-        "credits": claim_data.get("credits", 500),
-        "daily_quota": claim_data.get("daily_quota", 100),
+        "tier": claim_data.get("tier"),
         "machine_signature": sig,
-        "claim_url": claim_link,
         "created_at": time.time(),
     }
+    for field in ("credits", "daily_quota"):
+        value = claim_data.get(field)
+        if isinstance(value, (int, float)) and value >= 0:
+            credentials[field] = value
 
     # 5. Save credentials to ~/.nephis/credentials.json (chmod 0600)
     save_credentials(credentials)
-
-    # 6. Log claim link
-    log_msg = f"To manage your account, link this machine at: {claim_link}\n"
-    sys.stderr.write(log_msg)
-    sys.stderr.flush()
 
     return credentials
 
@@ -251,7 +242,7 @@ def resolve_api_key(override: Optional[str] = None, base_url: Optional[str] = No
     1. Direct override
     2. NEPHIS_API_KEY -> CIEL_API_KEY -> THANATON_API_KEY (also ANANKE_API_KEY)
     3. ~/.nephis/credentials.json
-    4. Autonomous zero-human bootstrap PoW claim
+    4. Empty string (the caller reports missing credentials)
     """
     if override and override.strip():
         return override.strip()
@@ -267,11 +258,4 @@ def resolve_api_key(override: Optional[str] = None, base_url: Optional[str] = No
     if stored and stored.get("api_key"):
         return stored["api_key"]
 
-    # 3. Autonomous bootstrap
-    try:
-        creds = bootstrap_agent_key(base_url)
-        return creds["api_key"]
-    except Exception as e:
-        sys.stderr.write(f"Warning: Autonomous agent key bootstrap failed: {e}\n")
-        sys.stderr.flush()
-        return ""
+    return ""

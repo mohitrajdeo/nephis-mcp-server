@@ -67,16 +67,6 @@ GENERAL_MAN = f"""{colorize("ESCHATONCTL(1)", BOLD)}                  {colorize(
     {colorize("-h, --help", CYAN)}     Show summary CLI help and options
     {colorize("--json", CYAN)}         Output deterministic machine-readable JSON for AI parsers
 
-{colorize("CREDIT ECONOMICS RATE CARD", BOLD)}
-    • 1 Credit = $0.00020 USD ($1.00 USD = 5,000 Credits)
-    • Void Microkernel (<4ms):    1.0 Credit ($0.00020)
-    • Apex Drop-In (Judge0):      1.0 Credit ($0.00020)
-    • Omni 50-Test Fast-Batch:    1.0 - 1.5 Credits ($0.00020 - $0.00030)
-    • Valgrind Memory Profiling:  4.0 Credits ($0.00080)
-    • Complexity Big-O Benchmark: 3.0 Credits ($0.00060)
-    • DBMS In-Memory Sandbox:     3.0 Credits ($0.00060)
-    • PoW Hashcash Free Claims:   0.0 Credits (Awards +500 free credits)
-
 {colorize("ENVIRONMENT VARIABLES", BOLD)}
     {colorize("NEPHIS_API_KEY", YELLOW)}      Primary API authentication key
     {colorize("ESCHATON_API_URL", YELLOW)}    Custom gateway URL (default: https://nephis.theeducode.com)

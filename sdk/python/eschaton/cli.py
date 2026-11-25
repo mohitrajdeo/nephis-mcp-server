@@ -12,7 +12,13 @@ import json
 import time
 import argparse
 import ssl
+
+try:
+    ssl._create_default_https_context = ssl._create_unverified_context
+except Exception:
+    pass
 import socket
+import uuid
 from datetime import datetime, timezone
 
 if sys.stdout.encoding != 'utf-8':
@@ -22,11 +28,11 @@ if sys.stdout.encoding != 'utf-8':
         pass
 
 # --- Configuration & Credentials ---
-GATEWAY_URL = os.getenv("ESCHATON_GATEWAY_URL", "https://eschaton.theeducode.com")
+GATEWAY_URL = os.getenv("ESCHATON_GATEWAY_URL", "https://nephis.theeducode.com")
 PORTAL_URL = os.getenv("ESCHATON_PORTAL_URL", "https://compiler.theeducode.com")
-ADMIN_KEY = os.getenv("ESCHATON_ADMIN_KEY", "d614bf83ba515c2f094a91e24c27cbe2aa50a55f38c227ea613bea6ac2773d04")
-MASTER_KEY = os.getenv("ESCHATON_MASTER_KEY", "esm_live_admin_master_theeducode_998877")
-DEFAULT_API_KEY = os.getenv("NEPHIS_API_KEY") or os.getenv("ESCHATON_API_KEY") or os.getenv("THANATON_API_KEY") or "esk_live_e3166f58935ad1b1396b828d75ee23f5ed02a0c1440c37735c098612"
+ADMIN_KEY = os.getenv("ESCHATON_ADMIN_KEY", "").strip()
+MASTER_KEY = os.getenv("ESCHATON_MASTER_KEY", "").strip()
+DEFAULT_API_KEY = (os.getenv("ESCHATON_API_KEY") or os.getenv("NEPHIS_API_KEY") or "").strip()
 
 AWS_PROFILE = os.getenv("AWS_PROFILE", "sujit2")
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
@@ -64,8 +70,23 @@ def print_error(msg):
 def print_warning(msg):
     print(colorize(f"[!] {msg}", Colors.WARNING))
 
+def require_admin_key(master=False):
+    key = MASTER_KEY if master else ADMIN_KEY
+    env_name = "ESCHATON_MASTER_KEY" if master else "ESCHATON_ADMIN_KEY"
+    if not key:
+        print_error(f"Set {env_name} to use this administrative command.")
+        return None
+    return key
+
+def require_api_key(key=None):
+    resolved = (key or DEFAULT_API_KEY or "").strip()
+    if not resolved:
+        print_error("Set ESCHATON_API_KEY (or a scoped NEPHIS_API_KEY), or pass --key.")
+        return None
+    return resolved
+
 # --- HTTP Helpers ---
-def http_get(url, headers=None, timeout=10):
+def http_get(url, headers=None, timeout=30):
     req_headers = {"User-Agent": "Eschaton-CLI/2.0"}
     if headers:
         req_headers.update(headers)
@@ -97,6 +118,8 @@ def http_post(url, json_data, headers=None, timeout=15):
     req_headers = {'Content-Type': 'application/json', "User-Agent": "Eschaton-CLI/2.0"}
     if headers:
         req_headers.update(headers)
+    if url.rstrip("/").endswith("/v1/execute") and not req_headers.get("Idempotency-Key"):
+        req_headers["Idempotency-Key"] = str(uuid.uuid4())
     try:
         import requests
         return requests.post(url, json=json_data, headers=req_headers, timeout=timeout)
@@ -314,10 +337,13 @@ def cmd_gateway(args):
 
     elif action == "telemetry":
         print_header("Live Cluster Telemetry (Via Gateway)")
+        admin_key = require_admin_key()
+        if not admin_key:
+            return
         try:
             resp = http_get(
                 f"{GATEWAY_URL}/v1/admin/telemetry",
-                headers={"X-Admin-Key": ADMIN_KEY}
+                headers={"X-Admin-Key": admin_key}
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -329,10 +355,13 @@ def cmd_gateway(args):
 
     elif action == "tenants":
         print_header("Registered Tenants & Credit Quotas")
+        master_key = require_admin_key(master=True)
+        if not master_key:
+            return
         try:
             resp = http_get(
                 f"{PORTAL_URL}/api/master/overview",
-                headers={"X-Admin-Master-Key": MASTER_KEY}
+                headers={"X-Admin-Master-Key": master_key}
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -355,10 +384,13 @@ def cmd_gateway(args):
 
     elif action == "keys":
         print_header("Active API Keys Overview")
+        master_key = require_admin_key(master=True)
+        if not master_key:
+            return
         try:
             resp = http_get(
                 f"{PORTAL_URL}/api/master/overview",
-                headers={"X-Admin-Master-Key": MASTER_KEY}
+                headers={"X-Admin-Master-Key": master_key}
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -388,6 +420,9 @@ def cmd_gateway(args):
             print_error(f"Failed to fetch API keys: {e}")
 
     elif action == "topup":
+        master_key = require_admin_key(master=True)
+        if not master_key:
+            return
         tenant_id = args.tenant_id
         amount = args.amount
         reason = getattr(args, 'reason', 'CLI manual top-up')
@@ -401,7 +436,7 @@ def cmd_gateway(args):
                     "amount": int(amount),
                     "reason": reason
                 },
-                headers={"X-Admin-Master-Key": MASTER_KEY}
+                headers={"X-Admin-Master-Key": master_key}
             )
             if resp.status_code == 200:
                 res = resp.json()
@@ -428,10 +463,13 @@ def cmd_brain(args):
     action = args.action
     if action == "status" or action == "workers":
         print_header("Brain Compiler Cluster & Worker Nodes")
+        admin_key = require_admin_key()
+        if not admin_key:
+            return
         try:
             resp = http_get(
                 f"{GATEWAY_URL}/v1/admin/telemetry",
-                headers={"X-Admin-Key": ADMIN_KEY}
+                headers={"X-Admin-Key": admin_key}
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -496,10 +534,6 @@ def cmd_brain(args):
 CORE_VOID_LANG_IDS = {
     50, 201, 221,  # C (GCC 9, C17, C23)
     54, 202, 222,  # C++ (GCC 9, C++20, C++23)
-    71, 204,       # Python (3.8, 3.12)
-    62, 205,       # Java (13, OpenJDK 21)
-    63, 207,       # JavaScript (Node 12, Node 20)
-    74, 209,       # TypeScript (3.7, 5.4)
 }
 
 LANG_MAP = {
@@ -509,9 +543,9 @@ LANG_MAP = {
     'c++23': 222,
     'c': 201,
     'c17': 201,
-    'python': 204,
-    'py': 204,
-    'python3': 204,
+    'python': 71,
+    'py': 71,
+    'python3': 71,
     'java': 205,
     'java21': 205,
     'rust': 208,
@@ -551,6 +585,9 @@ EXT_MAP = {
 }
 
 def execute_code_payload(lang_id, code, stdin_input="", expected="", suite="Void", key=None, as_json=False):
+    api_key = require_api_key(key)
+    if not api_key:
+        return
     tc = {
         "id": 1,
         "stdin": stdin_input or ""
@@ -569,7 +606,7 @@ def execute_code_payload(lang_id, code, stdin_input="", expected="", suite="Void
     try:
         headers = {
             "Content-Type": "application/json",
-            "X-API-Key": key or DEFAULT_API_KEY,
+            "X-API-Key": api_key,
             "User-Agent": "Eschaton-CLI/2.0"
         }
 
@@ -692,7 +729,9 @@ def cmd_run(args):
     execute_code_payload(lang_id, code, stdin_input, expected, suite, key, getattr(args, 'json', False))
 
 def cmd_account(args):
-    key = getattr(args, 'key', '') or DEFAULT_API_KEY
+    key = require_api_key(getattr(args, 'key', ''))
+    if not key:
+        return
     masked_key = f"{key[:12]}...{key[-4:]}" if len(key) > 16 else key
     print_header(f"Fetching Account Quota & Metering for Key: {masked_key}")
     try:
@@ -743,25 +782,53 @@ def cmd_languages(args):
     except Exception as e:
         print_error(f"Failed to query languages endpoint: {e}")
 
+def cmd_preflight(args):
+    try:
+        with open(args.file, "r", encoding="utf-8") as source_file:
+            source_code = source_file.read()
+        response = http_post(
+            f"{GATEWAY_URL}/v1/execute/preflight",
+            json_data={"source_code": source_code, "language_id": args.language_id},
+            headers={"Content-Type": "application/json", "User-Agent": "Eschaton-CLI/2.1"},
+            timeout=15,
+        )
+        if response.status_code not in (200, 422):
+            print_error(f"Preflight request failed (HTTP {response.status_code}): {response.text}")
+            sys.exit(1)
+        result = response.json()
+        if getattr(args, "json", False):
+            print(json.dumps(result, indent=2))
+        else:
+            print(json.dumps(result, indent=2))
+        if not result.get("passed", False):
+            sys.exit(1)
+    except FileNotFoundError:
+        print_error(f"Source file not found: {args.file}")
+        sys.exit(1)
+    except Exception as e:
+        print_error(f"Preflight did not produce a verdict: {e}")
+        sys.exit(1)
+
 # ==============================================================================
 # MAIN ENTRYPOINT & CLI PARSER
 # ==============================================================================
 
 def dispatch_suite_payload(payload, key=None, as_json=False, title="Executing"):
+    api_key = require_api_key(key)
+    if not api_key:
+        return
     start = time.time()
     try:
         headers = {
             "Content-Type": "application/json",
-            "X-API-Key": key or DEFAULT_API_KEY,
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            "X-API-Key": api_key,
+            "User-Agent": "Eschaton-CLI/2.1"
         }
 
-        # Dispatch to live execution endpoint with automatic fallback
+        # Never replay on a second origin after an ambiguous response: the first
+        # service may already have run the code and charged for the execution.
         url = f"{GATEWAY_URL}/v1/execute"
         resp = http_post(url, json_data=payload, headers=headers, timeout=30)
-        if resp.status_code != 200:
-            fallback_url = f"{PORTAL_URL}/execute"
-            resp = http_post(fallback_url, json_data=payload, headers=headers, timeout=30)
 
         roundtrip_ms = round((time.time() - start) * 1000, 2)
         if resp.status_code == 200:
@@ -782,19 +849,19 @@ def dispatch_suite_payload(payload, key=None, as_json=False, title="Executing"):
                     status_id = r.get("status_id", 0)
                     t_val = r.get("time", 0)
                     m_val = r.get("memory", 0)
-                    out = (r.get("stdout") or "").strip()
-                    err = (r.get("stderr") or "").strip()
+                    out = r.get("stdout") or ""
+                    err = r.get("stderr") or ""
 
                     status_str = "ACCEPTED (PASS)" if passed or status_id == 3 else f"FAIL (Status {status_id})"
                     status_color = Colors.GREEN if (passed or status_id == 3) else Colors.FAIL
 
                     print(f"\n[Test Case #{tcid}] {colorize(status_str, Colors.BOLD + status_color)}")
-                    print(f"  • Execution Time : {t_val} s")
-                    print(f"  • Peak Memory    : {m_val} KB")
+                    print(f"  * Execution Time : {t_val} s")
+                    print(f"  * Peak Memory    : {m_val} KB")
                     if out:
-                        print(f"  • STDOUT         : {out[:120]}{'...' if len(out)>120 else ''}")
+                        print(f"  * STDOUT         : {out}")
                     if err:
-                        print(colorize(f"  • DIAGNOSTICS    : {err[:160]}", Colors.WARNING))
+                        print(colorize(f"  * DIAGNOSTICS    : {err}", Colors.WARNING))
 
                 print(colorize(f"\n{'='*72}", Colors.DIM))
             elif data.get("Error"):
@@ -1071,6 +1138,10 @@ EXAMPLES:
     p_langs = subparsers.add_parser("languages", help="List all supported languages, compilers, and IDs")
     p_langs.add_argument("--key", default="", help="Optional API key")
 
+    p_preflight = subparsers.add_parser("preflight", help="Request the real Eschaton preflight verdict for a source file")
+    p_preflight.add_argument("file", help="Path to source code file")
+    p_preflight.add_argument("--language-id", type=int, default=71, help="Eschaton compiler language ID")
+
     # 9. batch (Multi-testcase execution across Omni, Apex, or Void suites)
     p_batch = subparsers.add_parser("batch", help="Run parallel or streamed testcase matrix (Omni, Apex, Void suites)")
     p_batch.add_argument("file", nargs="?", help="Path to source file")
@@ -1156,6 +1227,8 @@ EXAMPLES:
         cmd_account(args)
     elif args.component == "languages":
         cmd_languages(args)
+    elif args.component == "preflight":
+        cmd_preflight(args)
     elif args.component == "batch":
         cmd_batch(args)
     elif args.component == "complexity":

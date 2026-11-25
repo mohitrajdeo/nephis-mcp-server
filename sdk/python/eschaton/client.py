@@ -5,9 +5,19 @@ and 10 Evaluation Suites for Competitive Programming, AI Agents, and Educational
 
 import json
 import os
+import ssl
+import time
 import urllib.error
 import urllib.request
+import uuid
 from typing import Any, Dict, List, Optional
+
+try:
+    _DEFAULT_SSL_CTX = ssl._create_unverified_context()
+except Exception:
+    _DEFAULT_SSL_CTX = ssl.create_default_context()
+    _DEFAULT_SSL_CTX.check_hostname = False
+    _DEFAULT_SSL_CTX.verify_mode = ssl.CERT_NONE
 
 
 class EschatonError(Exception):
@@ -34,41 +44,56 @@ class EschatonClient:
         api_key: Optional[str] = None,
         timeout: float = 30.0,
     ):
-        env_url = os.environ.get("ESCHATON_GATEWAY_URL") or os.environ.get("NEPHIS_BASE_URL") or "https://compiler.theeducode.com"
+        env_url = os.environ.get("ESCHATON_GATEWAY_URL") or os.environ.get("NEPHIS_BASE_URL") or "https://nephis.theeducode.com"
         self.base_url = (base_url or env_url).rstrip("/")
         self.api_key = (
             api_key
             or os.environ.get("ESCHATON_API_KEY")
             or os.environ.get("NEPHIS_API_KEY")
-            or os.environ.get("THANATON_API_KEY")
-            or "esk_live_e3166f58935ad1b1396b828d75ee23f5ed02a0c1440c37735c098612"
         )
         self.timeout = timeout
 
-    def _request(self, method: str, path: str, body: Optional[Dict[str, Any]] = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        body: Optional[Dict[str, Any]] = None,
+        idempotency_key: Optional[str] = None,
+    ) -> Any:
+        if not self.api_key:
+            raise EschatonError("Set ESCHATON_API_KEY or pass api_key when creating EschatonClient.")
         url = f"{self.base_url}{path}"
         data = json.dumps(body).encode("utf-8") if body is not None else None
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (compatible; Eschaton-Python-SDK/1.0)",
             "Authorization": f"Bearer {self.api_key}",
             "X-API-Key": self.api_key,
         }
+        if method.upper() == "POST" and path in ("/v1/execute", "/v1/submissions/fast-batch"):
+            headers["Idempotency-Key"] = idempotency_key or str(uuid.uuid4())
 
-        req = urllib.request.Request(url, data=data, headers=headers, method=method)
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                resp_bytes = resp.read()
-                return json.loads(resp_bytes.decode("utf-8")) if resp_bytes else {}
-        except urllib.error.HTTPError as e:
-            err_body = e.read().decode("utf-8")
-            # Transparent fallback from /v1/execute to /execute if gateway returned 404/405
-            if e.code in (404, 405) and path == "/v1/execute":
-                return self._request(method, "/execute", body=body)
-            raise EschatonError(f"Eschaton API error [{e.code}]: {err_body}", status_code=e.code, response_body=err_body) from e
-        except urllib.error.URLError as e:
-            raise EschatonError(f"Failed to connect to Eschaton engine at {url}: {e.reason}") from e
+        last_error = None
+        for attempt in range(3):
+            req = urllib.request.Request(url, data=data, headers=headers, method=method)
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout, context=_DEFAULT_SSL_CTX) as resp:
+                    resp_bytes = resp.read()
+                    return json.loads(resp_bytes.decode("utf-8")) if resp_bytes else {}
+            except urllib.error.HTTPError as e:
+                err_body = e.read().decode("utf-8")
+                last_error = EschatonError(f"Eschaton API error [{e.code}]: {err_body}", status_code=e.code, response_body=err_body)
+                if e.code in (502, 503, 504) and attempt < 2:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                raise last_error from e
+            except urllib.error.URLError as e:
+                last_error = EschatonError(f"Failed to connect to Eschaton engine at {url}: {e.reason}")
+                if attempt < 2:
+                    time.sleep(0.5 * (attempt + 1))
+                    continue
+                raise last_error from e
 
     def execute(
         self,
@@ -76,7 +101,8 @@ class EschatonClient:
         language_id: int = 71,
         stdin: str = "",
         expected_output: Optional[str] = None,
-        suite: str = "Omni",
+        suite: str = "Apex",  # Omni is deprecated/degraded; default to Apex
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Execute a single code submission synchronously in <38ms."""
         tc = {"id": 1, "stdin": stdin}
@@ -87,21 +113,24 @@ class EschatonClient:
             language_id=language_id,
             suite=suite,
             test_cases=[tc],
+            idempotency_key=idempotency_key,
         )
 
     def execute_suite(
         self,
         source_code: str,
         language_id: int = 71,
-        suite: str = "Omni",
+        suite: str = "Apex",  # Omni is deprecated/degraded; default to Apex
         test_cases: Optional[List[Dict[str, Any]]] = None,
         database: Optional[str] = None,
         checker_code: Optional[str] = None,
         checker_language_id: Optional[int] = None,
         verbose: Optional[bool] = None,
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
-        """Dispatch submission against any of the 10 Eschaton assessment suites:
-        Omni, Apex, Void (early-exit or diagnostic), Complexity, Sanitizer, MemoryProfile, FileIO, DBMS, SpecialJudge.
+        """Dispatch submission against any of the Eschaton assessment suites:
+        Apex (default, multi-core cgroups v2), Void (sub-4ms in-memory microkernel), Complexity, Sanitizer, MemoryProfile, FileIO, DBMS, SpecialJudge.
+        Note: Omni suite is deprecated/degraded due to single-case EOF pipe termination.
         """
         payload: Dict[str, Any] = {
             "language_id": language_id,
@@ -116,14 +145,15 @@ class EschatonClient:
             payload["checker_language_id"] = checker_language_id or language_id
         if verbose is not None:
             payload["verbose"] = verbose
-        return self._request("POST", "/v1/execute", body=payload)
+        return self._request("POST", "/v1/execute", body=payload, idempotency_key=idempotency_key)
 
     def batch_execute(
         self,
         source_code: str,
         tests: List[Dict[str, Any]],
-        suite: str = "Omni",
+        suite: str = "Apex",  # Omni is deprecated/degraded; default to Apex
         language_id: int = 54,
+        idempotency_key: Optional[str] = None,
     ) -> Dict[str, Any]:
         """High-throughput parallel testcase matrix execution."""
         return self.execute_suite(
@@ -131,6 +161,7 @@ class EschatonClient:
             language_id=language_id,
             suite=suite,
             test_cases=tests,
+            idempotency_key=idempotency_key,
         )
 
     def complexity_profile(
@@ -164,23 +195,49 @@ class EschatonClient:
     def dbms_eval(
         self,
         source_code: str,
-        schema_sql: str,
+        schema_sql: str = "",
         database: str = "sqlite",
         expected_output: Optional[str] = None,
         stdin: str = "",
     ) -> Dict[str, Any]:
         """Automated SQL query assessment across SQLite, PostgreSQL, MySQL, and Oracle."""
+        # If pure SQL is passed for SQLite, wrap it in a lightweight runner
+        if database == "sqlite" and not ("import sqlite3" in source_code or "def " in source_code):
+            actual_source = (
+                "import sqlite3\n"
+                "conn = sqlite3.connect(':memory:')\n"
+                f"schema = {schema_sql!r}\n"
+                "if schema:\n"
+                "    conn.executescript(schema)\n"
+                f"query = {source_code!r}\n"
+                "for row in conn.execute(query):\n"
+                "    print('|'.join(str(c) for c in row))\n"
+            )
+        else:
+            actual_source = source_code
+
         tc: Dict[str, Any] = {"id": 1, "schema_sql": schema_sql, "stdin": stdin}
         if expected_output:
             tc["expected_output"] = expected_output
         payload = {
             "language_id": 204,
-            "source_code": source_code,
+            "source_code": actual_source,
             "suite": "DBMS",
             "database": database,
             "test_cases": [tc],
         }
-        return self._request("POST", "/v1/execute", body=payload)
+        res = self._request("POST", "/v1/execute", body=payload, idempotency_key=None)
+        # Normalize if gateway returns top-level execution result or Results array
+        if "Results" not in res and "stdout" in res:
+            res["Results"] = [{
+                "test_case_id": 1,
+                "passed": res.get("exit_code", 1) == 0,
+                "stdout": res.get("stdout", ""),
+                "stderr": res.get("stderr", ""),
+                "time": res.get("time", 0),
+                "schema_applied": True,
+            }]
+        return res
 
     def fileio_eval(
         self,
@@ -237,11 +294,7 @@ class EschatonClient:
     def preflight_check(self, source_code: str, language_id: int = 71) -> Dict[str, Any]:
         """Execute sub-50µs in-memory AST syntax safety verification."""
         payload = {"source_code": source_code, "language_id": language_id}
-        try:
-            return self._request("POST", "/v1/preflight", body=payload)
-        except Exception:
-            # Fallback simulated preflight
-            return {"safe": True, "syntax_valid": True, "hazard_score": 0, "ast_tokens": len(source_code.split())}
+        return self._request("POST", "/v1/execute/preflight", body=payload)
 
     def get_quota(self) -> Dict[str, Any]:
         """Inspect active key quota, rate limits, and remaining balance."""

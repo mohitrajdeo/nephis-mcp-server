@@ -6,7 +6,6 @@
 export {
   ThanatonClient,
   ThanatonClient as NephisClient,
-  ThanatonClient as CielClient,
   ThanatonClient as Nephis,
   SandboxManager,
   CDCManager,
@@ -25,11 +24,8 @@ export { Sandbox } from "./sandbox.js";
 
 export {
   ThanatonError,
-  ThanatonError as CielError,
   ThanatonError as NephisError,
-  ThanatonConnectionError as CielConnectionError,
   ThanatonConnectionError as NephisConnectionError,
-  ThanatonAPIError as CielAPIError,
   ThanatonAPIError as NephisAPIError,
   ThanatonAPIError,
   ThanatonTimeoutError,
@@ -39,14 +35,6 @@ export {
   ThanatonConnectionError,
   EscalationRequiredError,
 } from "./errors.js";
-
-export {
-  LicenseToken,
-  LicenseAuthority,
-  LicenseError,
-  TIERS,
-  DEFAULT_LICENSE_SECRET,
-} from "./license.js";
 
 export {
   MnemonClient,
@@ -80,8 +68,6 @@ export type {
   SandboxMetadata,
   SandboxRuntime,
   SandboxState,
-  NephisTier,
-  LicenseStatus,
   WebhookDispatchOptions,
   FinOpsScanOptions,
   StoragePipeBenchOptions,
@@ -108,12 +94,32 @@ export type {
   SpecialJudgeResult,
   BatchExecuteOptions,
   BatchExecuteResult,
+  LiveMigrateOptions,
+  LiveMigrateResult,
+  UnifiedKeyType,
+  TenantAuthContext,
+  RLSPolicyOptions,
+  RLSPolicyResult,
+  CheckpointOptions,
+  CheckpointResult,
+  DatabaseEngine,
+  CreateDatabaseOptions,
+  RedisCommandOptions,
+  RedisCommandResult,
+  MongoQueryOptions,
+  MongoQueryResult,
+  VectorSearchOptions,
+  VectorSearchResult,
+  VectorUpsertOptions,
+  VectorUpsertResult,
+  DeployCodeOptions,
+  DeploymentItem,
+  DeploymentsListResult,
+  DeploymentStatusResult,
+  SetPreviewOptions,
+  ProjectMetricsResult,
+  SandboxTelemetryResult,
+  ClusterMetricsResult,
 } from "./types.js";
-
-export type {
-  TierEntitlements,
-  LicenseClaims,
-  GenerateLicenseOptions,
-} from "./license.js";
 
 export { ThanatonClient as default } from "./client.js";

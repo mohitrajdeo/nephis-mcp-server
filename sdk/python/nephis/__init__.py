@@ -20,12 +20,11 @@ from thanaton.exceptions import (
 from nephis.auth import (
     resolve_base_url,
     resolve_api_key,
-    bootstrap_agent_key,
     load_stored_credentials,
     save_credentials,
 )
 
-__version__ = "1.0.2"
+__version__ = "1.0.4"
 
 class AdminManager:
     """Cluster administration & emergency security killswitch manager."""
@@ -33,27 +32,23 @@ class AdminManager:
         self.client = client
 
     def quarantine(self, tenant_id: str, reason: str = "Emergency security isolation trigger", freeze_sandboxes: bool = True) -> Dict[str, Any]:
-        return {
-            "status": "quarantined",
+        return self.client._request("POST", "/api/v1/admin/tenants/quarantine", body={
             "tenant_id": tenant_id,
             "reason": reason,
-            "tokens_evicted": True,
-            "sandboxes_frozen": freeze_sandboxes,
-            "message": f"Tenant '{tenant_id}' quarantined. All active tokens evicted and sandboxes frozen."
-        }
+            "operator": "nephis-python-sdk",
+            "freeze_sandbox": freeze_sandboxes,
+        })
 
     def unquarantine(self, tenant_id: str) -> Dict[str, Any]:
-        return {
-            "status": "unquarantined",
-            "tenant_id": tenant_id,
-            "message": f"Tenant '{tenant_id}' unquarantined and access restored."
-        }
+        return self.client._request("POST", "/api/v1/admin/tenants/unquarantine", body={"tenant_id": tenant_id})
 
     def list_quarantined(self) -> List[str]:
-        return []
+        result = self.client._request("GET", "/api/v1/admin/tenants/quarantined")
+        tenants = result.get("quarantined_tenants", []) if isinstance(result, dict) else []
+        return [str(item) for item in tenants]
 
     def list_nodes(self) -> List[Dict[str, Any]]:
-        return [{"node_id": "node-01", "role": "coordinator", "status": "Ready", "sandboxes": 0}]
+        raise NotImplementedError("The provider API does not expose a node inventory endpoint.")
 
 
 class SpecBoxManager:
@@ -62,15 +57,7 @@ class SpecBoxManager:
         self.client = client
 
     def warm(self, language: str = "python", memory_mb: int = 128, tenant_id: str = "tenant-default") -> Dict[str, Any]:
-        return {
-            "status": "PREWARMED",
-            "specbox_id": f"spx-{tenant_id[:8]}-001",
-            "language": language,
-            "memory_mb": memory_mb,
-            "perceived_handover_ms": 0.76,
-            "cow_pool": "ACTIVE_HOT",
-            "message": "SpecBox token stream intercepted: sandbox pre-warmed in 0.76ms."
-        }
+        raise NotImplementedError("The provider API does not expose a SpecBox warm endpoint.")
 
 
 class OZZManager:
@@ -79,16 +66,7 @@ class OZZManager:
         self.client = client
 
     def fuzz(self, target_command: str = "go test -race ./...", iterations: int = 50, thread_count: int = 4) -> Dict[str, Any]:
-        return {
-            "status": "VERIFIED_RACE_FREE",
-            "target_command": target_command,
-            "iterations_executed": iterations,
-            "thread_count": thread_count,
-            "pmu_permutation_overhead_pct": 2.95,
-            "races_detected": 0,
-            "detection_latency_ms": 84.2,
-            "message": "OZZ in-vivo PMU permutation completed with 2.95% tax. Zero data races."
-        }
+        raise NotImplementedError("The provider API does not expose an OZZ fuzz endpoint.")
 
 
 class LazyLogManager:
@@ -97,15 +75,7 @@ class LazyLogManager:
         self.client = client
 
     def append(self, tenant_id: str, record_type: str = "WAL_RECORD_TX_COMMIT", payload: str = "") -> Dict[str, Any]:
-        return {
-            "status": "APPENDED_PERSISTED",
-            "tenant_id": tenant_id,
-            "record_type": record_type,
-            "ring_append_latency_us": 0.05,
-            "throughput_ops_sec": 2841440,
-            "monotonic_order": "GUARANTEED_TOTAL_ORDER",
-            "message": "LazyLog decoupled ring buffer append completed in 0.05µs."
-        }
+        raise NotImplementedError("The provider API does not expose a LazyLog append endpoint.")
 
 
 class AnvilManager:
@@ -114,16 +84,7 @@ class AnvilManager:
         self.client = client
 
     def verify(self, controller_name: str = "nephis-sandbox-reconciler", initial_rank: int = 8) -> Dict[str, Any]:
-        return {
-            "status": "FORMALLY_BOUNDED_LIVENESS",
-            "controller_name": controller_name,
-            "initial_rank": initial_rank,
-            "final_rank": 0,
-            "reconciliation_steps": initial_rank,
-            "hang_detected": False,
-            "infinite_loop_detected": False,
-            "message": f"Anvil controller verification complete: rank decayed to 0 in {initial_rank} steps with zero hangs."
-        }
+        raise NotImplementedError("The provider API does not expose an Anvil verification endpoint.")
 
 
 class ResearchManager:
@@ -132,12 +93,7 @@ class ResearchManager:
         self.client = client
 
     def verify(self) -> Dict[str, Any]:
-        return {
-            "status": "ALL_PAPERS_VERIFIED",
-            "verified_papers_count": 13,
-            "commodity_hardware_compliant": True,
-            "message": "All 13 breakthrough research papers verified operational on commodity CPU + NVMe hardware."
-        }
+        raise NotImplementedError("The provider API does not expose a research verification endpoint.")
 
 
 class NephisClient(ThanatonClient):
@@ -155,56 +111,17 @@ class NephisClient(ThanatonClient):
 
     def fast_batch(self, language_id: int, source_code: str, tests: List[Dict[str, str]]) -> Dict[str, Any]:
         """
-        Dispatches up to 50 testcases in a single HTTP request to /v1/submissions/fast-batch.
-        Returns aggregated result { total: 50, passed: 50, time: 0.038, status: 'Accepted' }.
+        Executes up to 50 testcases through the metered /v1/execute endpoint.
+        Returns the server's raw result and propagates API or billing errors.
         """
-        import json, urllib.request
+        if not 1 <= len(tests) <= 50:
+            raise ValueError("tests must contain between 1 and 50 test cases")
         tests_slice = tests[:50]
-        test_cases = [t.get("stdin", "") if isinstance(t, dict) else str(t) for t in tests_slice]
-        payload = json.dumps({
-            "language_id": language_id,
-            "source_code": source_code,
-            "tests": tests_slice,
-            "test_cases": test_cases
-        }).encode("utf-8")
-        req = urllib.request.Request(
-            f"{self.base_url}/v1/submissions/fast-batch",
-            data=payload,
-            headers={
-                "User-Agent": "nephis-sdk/1.0.0",
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            },
-            method="POST"
+        return self.eschaton.batch_execute(
+            source_code=source_code,
+            tests=tests_slice,
+            language_id=language_id,
         )
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                all_passed = data.get("all_passed", True)
-                total = len(tests_slice)
-                passed = total if all_passed else data.get("passed_count", total)
-                duration_ms = float(data.get("duration_ms", 38.0))
-                duration_sec = round(duration_ms / 1000.0, 3)
-                time_val = 0.038 if duration_sec < 0.005 else duration_sec
-                return {
-                    "total": total,
-                    "passed": passed,
-                    "time": time_val,
-                    "status": "Accepted" if all_passed else "Failed",
-                    "fanout_workers": data.get("fanout_workers", 8),
-                    "execution_proof": data.get("execution_proof", "")
-                }
-        except Exception as e:
-            total = len(tests_slice)
-            return {
-                "total": total,
-                "passed": total,
-                "time": 0.038,
-                "status": "Accepted",
-                "fanout_workers": 8,
-                "simulation": True,
-                "notice": str(e)
-            }
 
 
 # Canonical NEPHIS aliases
@@ -242,7 +159,6 @@ __all__ = [
     "ResearchManager",
     "resolve_base_url",
     "resolve_api_key",
-    "bootstrap_agent_key",
     "load_stored_credentials",
     "save_credentials",
     "__version__",

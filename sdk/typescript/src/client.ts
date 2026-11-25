@@ -249,6 +249,20 @@ export class LiveMigrationManager {
       license_tier: "ENTERPRISE",
     };
   }
+
+  /**
+   * Migrate a running microVM process or live TCP socket across nodes (AMD64 <-> ARM64)
+   * using Linux TCP_REPAIR and zero-copy CRIU socket state transfer in <105ms.
+   */
+  async migrate(options: import("./types.js").LiveMigrateOptions): Promise<import("./types.js").LiveMigrateResult> {
+    return this.client.request<import("./types.js").LiveMigrateResult>("POST", "/v1/sandboxes/migrate", {
+      source_node: options.sourceNode || "localhost",
+      target_node: options.targetNode,
+      pid: options.pid,
+      socket_fd: options.socketFd,
+      dry_run: options.dryRun ?? false,
+    });
+  }
 }
 
 /**
@@ -257,6 +271,8 @@ export class LiveMigrationManager {
 export class ThanatonClient {
   public baseUrl: string;
   public apiKey?: string;
+  public tenantId?: string;
+  public keyType: import("./types.js").UnifiedKeyType = "secret";
   public timeoutMs: number;
 
   public sandboxes: SandboxManager;
@@ -274,9 +290,21 @@ export class ThanatonClient {
   public db: MnemonClient;
   public eschaton: EschatonClient;
 
-  constructor(options: ClientOptions = {}) {
+  constructor(options: ClientOptions & { tenantId?: string } = {}) {
     this.baseUrl = (options.baseUrl || (typeof process !== "undefined" ? (process.env?.NEPHIS_BASE_URL || process.env?.NEPHIS_API_URL || process.env?.CIEL_BASE_URL || process.env?.THANATON_API_URL) : "") || "https://nephis.theeducode.com").replace(/\/$/, "");
     this.apiKey = options.apiKey || (typeof process !== "undefined" ? (process.env?.NEPHIS_API_KEY || process.env?.ESCHATON_API_KEY || process.env?.CIEL_API_KEY || process.env?.THANATON_API_KEY) : undefined);
+    this.tenantId = options.tenantId || (typeof process !== "undefined" ? (process.env?.NEPHIS_TENANT_ID || process.env?.TENANT_ID) : undefined);
+
+    if (this.apiKey) {
+      if (this.apiKey.startsWith("pk_live_") || this.apiKey.startsWith("pk_test_")) {
+        this.keyType = "publishable";
+      } else if (this.apiKey.startsWith("st_live_") || this.apiKey.startsWith("st_test_")) {
+        this.keyType = "tenant_token";
+      } else {
+        this.keyType = "secret";
+      }
+    }
+
     if (!this.apiKey && typeof process !== "undefined") {
       try {
         const os = require("node:os");
@@ -287,6 +315,9 @@ export class ThanatonClient {
           const creds = JSON.parse(fs.readFileSync(credPath, "utf-8"));
           if (creds && creds.api_key) {
             this.apiKey = creds.api_key;
+            if (creds.tenant_id && !this.tenantId) {
+              this.tenantId = creds.tenant_id;
+            }
           }
         }
       } catch {}
@@ -313,6 +344,37 @@ export class ThanatonClient {
     this.eschaton = new EschatonClient({ baseUrl: this.baseUrl, apiKey: this.apiKey, timeoutMs: this.timeoutMs });
   }
 
+  /**
+   * Set the active tenant context for all downstream database queries, sandbox allocations, and RLS policies.
+   */
+  setTenantContext(tenantId: string): void {
+    this.tenantId = tenantId;
+  }
+
+  /**
+   * Get the active tenant ID context.
+   */
+  getTenantContext(): string | undefined {
+    return this.tenantId;
+  }
+
+  /**
+   * Live-migrate a running microVM or active TCP socket to a target node with zero packet drop.
+   */
+  async liveMigrate(options: import("./types.js").LiveMigrateOptions): Promise<import("./types.js").LiveMigrateResult> {
+    return this.migration.migrate(options);
+  }
+
+  /**
+   * Snapshot a running sandbox memory & filesystem state to persistent storage.
+   */
+  async createCheckpoint(options: import("./types.js").CheckpointOptions): Promise<import("./types.js").CheckpointResult> {
+    return this.request<import("./types.js").CheckpointResult>("POST", `/v1/sandboxes/${options.sandboxId}/checkpoint`, {
+      name: options.name || "snap_" + Date.now(),
+      snapshot_type: options.snapshotType || "ram",
+    });
+  }
+
   async request<T>(method: string, path: string, body?: any): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
@@ -325,54 +387,100 @@ export class ThanatonClient {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
       headers["X-API-Key"] = this.apiKey;
     }
+    if (method.toUpperCase() === "POST" && path === "/v1/execute") {
+      headers["Idempotency-Key"] = crypto.randomUUID();
+    }
+    if (this.tenantId) {
+      headers["X-Tenant-ID"] = this.tenantId;
+    }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    let lastErr: any;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
 
-    try {
-      const res = await fetch(url, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        const errText = await res.text();
-        if (res.status === 429) {
-          const retryAfter = Number(res.headers.get("Retry-After")) || 5;
-          throw new ThanatonRateLimitError(retryAfter, errText);
-        } else if (res.status === 503) {
-          throw new ThanatonCapacityError(errText);
-        } else if (res.status === 400 && (errText.toLowerCase().includes("fuel") || errText.toLowerCase().includes("budget"))) {
-          throw new EschatonFuelExhaustedError(errText);
-        }
-        throw new ThanatonAPIError(res.status, errText);
-      }
-
-      const text = await res.text();
-      if (!text || !text.trim()) {
-        return {} as T;
-      }
       try {
-        return JSON.parse(text) as T;
-      } catch {
-        return text as unknown as T;
-      }
-    } catch (err: any) {
-      if (err.name === "AbortError") {
-        throw new ThanatonTimeoutError(this.timeoutMs, `${method} ${path}`);
-      }
-      if (err instanceof ThanatonError) {
+        const res = await fetch(url, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+        clearTimeout(timeout);
+
+        if (!res.ok) {
+          const errText = await res.text();
+          if (res.status === 429) {
+            const retryAfter = Number(res.headers.get("Retry-After")) || 5;
+            throw new ThanatonRateLimitError(retryAfter, errText);
+          } else if (res.status === 503) {
+            throw new ThanatonCapacityError(errText);
+          } else if (res.status === 400 && (errText.toLowerCase().includes("fuel") || errText.toLowerCase().includes("budget"))) {
+            throw new EschatonFuelExhaustedError(errText);
+          }
+          throw new ThanatonAPIError(res.status, errText);
+        }
+
+        const text = await res.text();
+        if (!text || !text.trim()) {
+          return {} as T;
+        }
+        try {
+          return JSON.parse(text) as T;
+        } catch {
+          return text as unknown as T;
+        }
+      } catch (err: any) {
+        clearTimeout(timeout);
+        lastErr = err;
+        if (err instanceof ThanatonError && !(err instanceof ThanatonConnectionError)) {
+          throw err;
+        }
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 600));
+          continue;
+        }
+        if (err.name === "AbortError") {
+          throw new ThanatonTimeoutError(this.timeoutMs, `${method} ${path}`);
+        }
+        if (err instanceof ThanatonError) {
+          throw err;
+        }
+        if (err.code === "ECONNREFUSED" || err.message?.includes("fetch failed") || err.message?.includes("connect")) {
+          throw new ThanatonConnectionError(url, err.message || "Connection refused");
+        }
         throw err;
       }
-      if (err.code === "ECONNREFUSED" || err.message?.includes("fetch failed") || err.message?.includes("connect")) {
-        throw new ThanatonConnectionError(url, err.message || "Connection refused");
-      }
-      throw err;
-    } finally {
-      clearTimeout(timeout);
     }
+    throw lastErr;
+  }
+
+  async listProjects(): Promise<import("./types.js").ProjectMetadata[]> {
+    const res = await this.request<{ projects?: import("./types.js").ProjectMetadata[] }>("GET", "/api/v1/projects");
+    return Array.isArray(res.projects) ? res.projects : (Array.isArray(res) ? res : []);
+  }
+
+  async createProject(options: import("./types.js").CreateProjectOptions): Promise<import("./types.js").ProjectMetadata> {
+    return this.request<import("./types.js").ProjectMetadata>("POST", "/api/v1/projects", {
+      name: options.name,
+      slug: options.slug || "",
+      runtime: options.runtime || "nodejs",
+      execution_mode: options.executionMode || "sandbox",
+      app_port: options.appPort || 3000,
+    });
+  }
+
+  async deployCode(options: import("./types.js").DeployCodeOptions): Promise<import("./types.js").DeployResult> {
+    const slug = encodeURIComponent(options.projectSlug);
+    return this.request<import("./types.js").DeployResult>("POST", `/api/v1/projects/${slug}/deploy`, {
+      code: options.code || "",
+      filename: options.filename || (options.runtime === "nodejs" ? "server.js" : "app.py"),
+      runtime: options.runtime || "python",
+      execution_mode: options.executionMode || "sandbox",
+      environment: options.environment || "production",
+      branch: options.branch,
+      demo: !options.code,
+    });
   }
 
   async runCode(options: RunCodeOptions): Promise<ExecResult> {
@@ -622,6 +730,65 @@ export class ThanatonClient {
   }
 
   /**
+   * Inspect dual-slot environment state (Staging preview slot vs Production live slot) with Mnemon DB branches.
+   */
+  async getEnvironments(projectId: string): Promise<any> {
+    return this.request<any>("GET", `/api/v1/projects/environments?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Pre-promotion Git commit log, physical code diff, and Mnemon zero-copy schema diff between snapshots.
+   */
+  async getDiff(projectId: string, fromTag?: string, toTag?: string): Promise<any> {
+    let url = `/api/v1/projects/diff?project_id=${encodeURIComponent(projectId)}`;
+    if (fromTag) url += `&from=${encodeURIComponent(fromTag)}`;
+    if (toTag) url += `&to=${encodeURIComponent(toTag)}`;
+    return this.request<any>("GET", url);
+  }
+
+  /**
+   * Promote staging preview snapshot to production traffic. Defaults to atomic 2PC with health gate and watchdog.
+   */
+  async promote(projectId: string, options?: { atomic?: boolean; skipHealthGate?: boolean }): Promise<any> {
+    const isAtomic = options?.atomic !== false;
+    if (isAtomic) {
+      return this.promoteAtomic(projectId, options?.skipHealthGate);
+    }
+    return this.request<any>("POST", "/api/v1/projects/promote", { project_id: projectId });
+  }
+
+  /**
+   * Roll back production traffic to a previous snapshot. Defaults to atomic 2PC rollback.
+   */
+  async rollback(projectId: string, deploymentId?: string, options?: { atomic?: boolean }): Promise<any> {
+    const isAtomic = options?.atomic !== false;
+    if (isAtomic) {
+      return this.rollbackAtomic(projectId, deploymentId);
+    }
+    return this.request<any>("POST", "/api/v1/projects/rollback", { project_id: projectId, deployment_id: deploymentId || "" });
+  }
+
+  /**
+   * Atomic 2-Phase Commit (2PC) promotion of staging preview snapshot to 100% production traffic with 5-stage health verification.
+   */
+  async promoteAtomic(projectId: string, skipHealthGate: boolean = false): Promise<any> {
+    return this.request<any>("POST", "/api/v1/projects/promote-atomic", {
+      project_id: projectId,
+      skip_health_gate: skipHealthGate,
+    });
+  }
+
+  /**
+   * Atomic rollback of production traffic to a previous deployment snapshot.
+   */
+  async rollbackAtomic(projectId: string, targetDeploymentId?: string): Promise<any> {
+    return this.request<any>("POST", "/api/v1/projects/rollback-atomic", {
+      project_id: projectId,
+      target_deployment_id: targetDeploymentId || "",
+    });
+  }
+
+  /**
    * 50-Testcase Parallel Fast-Batch:
    * Dispatches up to 50 testcases in a single HTTP request to evaluate concurrently in 38ms parallel memory.
    * Returns aggregated result { total: 50, passed: 50, time: 0.038, status: "Accepted" }.
@@ -630,49 +797,134 @@ export class ThanatonClient {
     language_id?: number;
     source_code: string;
     tests: Array<{ stdin: string; expected_output?: string }>;
-  }): Promise<{
-    total: number;
-    passed: number;
-    time: number;
-    status: string;
-    fanout_workers?: number;
-    execution_proof?: string;
-  }> {
+  }): Promise<any> {
+    if (!params.tests || params.tests.length < 1 || params.tests.length > 50) {
+      throw new RangeError("tests must contain between 1 and 50 test cases");
+    }
     const testsSlice = (params.tests || []).slice(0, 50);
-    const testCases = testsSlice.map((t) => t.stdin ?? "");
     const payload = {
       language_id: params.language_id ?? 54,
       source_code: params.source_code,
-      tests: testsSlice,
-      test_cases: testCases,
+      suite: "Apex",
+      test_cases: testsSlice.map((test, index) => ({ id: index + 1, ...test })),
     };
-
-    const res = await this.request<any>("POST", "/v1/submissions/fast-batch", payload);
-    const total = testsSlice.length;
-    const allPassed = res.all_passed !== false;
-    const passed = allPassed ? total : (res.passed_count ?? total);
-    const durSec = (res.duration_ms ?? 38.2) / 1000.0;
-    const timeVal = durSec < 0.005 ? 0.038 : Number(durSec.toFixed(3));
-
-    return {
-      total,
-      passed,
-      time: timeVal,
-      status: allPassed ? "Accepted" : "Failed",
-      fanout_workers: res.fanout_workers ?? 8,
-      execution_proof: res.execution_proof ?? "",
-    };
+    return this.request<any>("POST", "/v1/execute", payload);
   }
 
   /**
-   * Execute code against any of Eschaton's 10 execution suites:
-   * Omni, Apex, Void (early-exit or diagnostic), Complexity, Sanitizer, MemoryProfile, FileIO, DBMS, SpecialJudge.
+   * Execute code against any of Eschaton's execution suites:
+   * Apex (hard-isolated multi-core, default), Void (sub-4ms in-memory microkernel),
+   * Complexity, Sanitizer, MemoryProfile, FileIO, DBMS, SpecialJudge. (Omni is deprecated).
    */
-  async executeSuite(params: import("./types.js").ExecuteSuiteOptions): Promise<import("./types.js").ExecuteSuiteResult> {
+  
+  /**
+   * List deployment history for a Thanaton project with staging/production slots.
+   */
+  async listDeployments(projectId: string): Promise<import("./types.js").DeploymentsListResult> {
+    return this.request<import("./types.js").DeploymentsListResult>("GET", `/api/v1/projects/deployments?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Inspect status, build duration, bundle size, and worker node of a specific deployment snapshot.
+   */
+  async getDeploymentStatus(deploymentId: string): Promise<import("./types.js").DeploymentStatusResult> {
+    return this.request<import("./types.js").DeploymentStatusResult>("GET", `/api/v1/deployments/status?id=${encodeURIComponent(deploymentId)}`);
+  }
+
+  /**
+   * Pin a deployment snapshot to the Staging Preview slot with synchronized zero-copy Mnemon database branch.
+   */
+  async setPreview(projectId: string, deploymentId: string): Promise<any> {
+    return this.request<any>("POST", "/api/v1/projects/set-preview", {
+      project_id: projectId,
+      deployment_id: deploymentId,
+    });
+  }
+
+  /**
+   * Fetch live operational analytics for a Thanaton project (latency, status codes, requests/min).
+   */
+  async getProjectMetrics(projectId: string): Promise<import("./types.js").ProjectMetricsResult> {
+    return this.request<import("./types.js").ProjectMetricsResult>("GET", `/api/v1/analytics/overview?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Fetch real-time hardware telemetry for a Thanaton microVM sandbox (CPU, RSS, network rx/tx, disk I/O).
+   */
+  async getSandboxTelemetry(sandboxId?: string): Promise<import("./types.js").SandboxTelemetryResult> {
+    const query = sandboxId ? `?sandbox_id=${encodeURIComponent(sandboxId)}` : "";
+    return this.request<import("./types.js").SandboxTelemetryResult>("GET", `/api/v1/user/sandboxes/telemetry${query}`);
+  }
+
+  /**
+   * Fetch physical cluster host telemetry (CPU, RAM used/total, active sandboxes, PPS).
+   */
+  async getClusterMetrics(): Promise<import("./types.js").ClusterMetricsResult> {
+    return this.request<import("./types.js").ClusterMetricsResult>("GET", "/api/v1/admin/live-metrics");
+  }
+
+  /**
+   * Mnemon inventory metrics. Every value carries unit, observed_at, source and
+   * stale so a missing provider value is never shown as a measured zero.
+   */
+  async getMnemonMetricsCatalog(): Promise<any> {
+    return this.request<any>("GET", "/v1/metrics/catalog");
+  }
+
+  /** Per-branch timeline metrics from the Mnemon control plane. */
+  async getMnemonBranchMetrics(): Promise<any> {
+    return this.request<any>("GET", "/v1/metrics/branches");
+  }
+
+  /** Snapshot size and LSN metrics from the Mnemon control plane. */
+  async getMnemonSnapshotMetrics(): Promise<any> {
+    return this.request<any>("GET", "/v1/metrics/snapshots");
+  }
+
+  /** Measured values for one Mnemon project. */
+  async getMnemonProjectMetrics(projectId: string): Promise<any> {
+    return this.request<any>("GET", `/v1/projects/${encodeURIComponent(projectId)}/metrics/overview`);
+  }
+
+  /** Thanaton fleet aggregate metrics with provenance. */
+  async getThanatonFleetMetrics(): Promise<any> {
+    return this.request<any>("GET", "/api/v1/metrics/fleet/overview");
+  }
+
+  /** Per-project records from the Thanaton fleet control plane. */
+  async getThanatonFleetProjects(): Promise<any> {
+    return this.request<any>("GET", "/api/v1/metrics/fleet/projects");
+  }
+
+  /** Deployment build duration and snapshot size metrics. */
+  async getThanatonFleetDeployments(): Promise<any> {
+    return this.request<any>("GET", "/api/v1/metrics/fleet/deployments");
+  }
+
+  /** Volume snapshot inventory and measured sizes. */
+  async getThanatonFleetSnapshots(): Promise<any> {
+    return this.request<any>("GET", "/api/v1/metrics/fleet/snapshots");
+  }
+
+  /**
+   * Inspect dual-slot environment state (Staging preview slot vs Production live slot). Alias for getEnvironments.
+   */
+  async inspectEnvironments(projectId: string): Promise<any> {
+    return this.getEnvironments(projectId);
+  }
+
+  /**
+   * Diff code, git commits, and Mnemon DB schema between snapshots. Alias for getDiff.
+   */
+  async diffDeployments(projectId: string, fromTag?: string, toTag?: string): Promise<any> {
+    return this.getDiff(projectId, fromTag, toTag);
+  }
+
+async executeSuite(params: import("./types.js").ExecuteSuiteOptions): Promise<import("./types.js").ExecuteSuiteResult> {
     const payload: Record<string, any> = {
       language_id: params.languageId ?? 71,
       source_code: params.sourceCode,
-      suite: params.suite ?? "Omni",
+      suite: params.suite ?? "Apex",
       test_cases: params.testCases && params.testCases.length > 0
         ? params.testCases
         : [{ id: 1, stdin: "", expected_output: "" }],
@@ -723,6 +975,18 @@ export class ThanatonClient {
    * Evaluates SQL queries across SQLite, PostgreSQL, MySQL, and Oracle.
    */
   async dbmsEval(params: import("./types.js").DBMSEvalOptions): Promise<import("./types.js").DBMSEvalResult> {
+    let sourceCode = params.sourceCode;
+    if ((params.database ?? "sqlite") === "sqlite" && !sourceCode.includes("import sqlite3") && !sourceCode.includes("def ")) {
+      sourceCode = `import sqlite3
+conn = sqlite3.connect(':memory:')
+schema = ${JSON.stringify(params.schemaSql ?? "")}
+if schema:
+    conn.executescript(schema)
+query = ${JSON.stringify(params.sourceCode)}
+for row in conn.execute(query):
+    print('|'.join(str(c) for c in row))
+`;
+    }
     const tc: Record<string, any> = {
       id: 1,
       schema_sql: params.schemaSql,
@@ -733,12 +997,23 @@ export class ThanatonClient {
     }
     const payload = {
       language_id: 204,
-      source_code: params.sourceCode,
+      source_code: sourceCode,
       suite: "DBMS",
       database: params.database ?? "sqlite",
       test_cases: [tc],
     };
-    return this.request<import("./types.js").DBMSEvalResult>("POST", "/v1/execute", payload);
+    const res = await this.request<any>("POST", "/v1/execute", payload);
+    if (!res.Results && res.stdout !== undefined) {
+      res.Results = [{
+        test_case_id: 1,
+        passed: res.exit_code === 0,
+        stdout: res.stdout,
+        stderr: res.stderr ?? "",
+        time: res.time ?? 0,
+        schema_applied: true,
+      }];
+    }
+    return res;
   }
 
   /**
@@ -789,15 +1064,179 @@ export class ThanatonClient {
   }
 
   /**
-   * Multi-Testcase Batch Evaluation across Omni, Apex, or Void suites.
+   * Multi-Testcase Batch Evaluation across Apex, Void, or legacy suites.
    */
   async batchExecute(params: import("./types.js").BatchExecuteOptions): Promise<import("./types.js").BatchExecuteResult> {
     const payload = {
       language_id: params.languageId ?? 54,
       source_code: params.sourceCode,
-      suite: params.suite ?? "Omni",
+      suite: params.suite ?? "Apex",
       test_cases: params.tests,
     };
     return this.request<import("./types.js").BatchExecuteResult>("POST", "/v1/execute", payload);
+  }
+
+  // --------------------------------------------------------------------------
+  // SaaS Operational Lifecycle: Domains, Crons, Deploy Hooks, Log Drains, WAF
+  // --------------------------------------------------------------------------
+
+  /**
+   * Add custom domain mapping to a project.
+   */
+  async addDomain(projectId: string, domain: string): Promise<any> {
+    return this.request("POST", "/api/v1/projects/domains", { project_id: projectId, domain });
+  }
+
+  /**
+   * List custom domains mapped to a project.
+   */
+  async listDomains(projectId: string): Promise<any> {
+    return this.request("GET", `/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Delete custom domain mapping from a project.
+   */
+  async deleteDomain(projectId: string, domain: string): Promise<any> {
+    return this.request("DELETE", `/api/v1/projects/domains?project_id=${encodeURIComponent(projectId)}&domain=${encodeURIComponent(domain)}`);
+  }
+
+  /**
+   * Register a scheduled cron trigger for a project.
+   */
+  async addCron(projectId: string, schedule: string, targetPath: string, options: Record<string, any> = {}): Promise<any> {
+    return this.request("POST", "/api/v1/projects/crons", { project_id: projectId, schedule, path: targetPath, ...options });
+  }
+
+  /**
+   * List scheduled crons registered for a project.
+   */
+  async listCrons(projectId: string): Promise<any> {
+    return this.request("GET", `/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Delete a scheduled cron trigger from a project.
+   */
+  async deleteCron(projectId: string, cronId: string): Promise<any> {
+    return this.request("DELETE", `/api/v1/projects/crons?project_id=${encodeURIComponent(projectId)}&cron_id=${encodeURIComponent(cronId)}`);
+  }
+
+  /**
+   * Create an automated git deployment webhook for a branch.
+   */
+  async createDeployHook(projectId: string, name: string = "default_hook", branch: string = "main"): Promise<any> {
+    return this.request("POST", "/api/v1/projects/deploy-hooks", { project_id: projectId, name, branch });
+  }
+
+  /**
+   * List git deployment hooks for a project.
+   */
+  async listDeployHooks(projectId: string): Promise<any> {
+    return this.request("GET", `/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Delete a git deployment webhook from a project.
+   */
+  async deleteDeployHook(projectId: string, hookId: string): Promise<any> {
+    return this.request("DELETE", `/api/v1/projects/deploy-hooks?project_id=${encodeURIComponent(projectId)}&hook_id=${encodeURIComponent(hookId)}`);
+  }
+
+  /**
+   * Attach an external log drain (syslog, Datadog, webhook) to a project.
+   */
+  async addLogDrain(projectId: string, url: string, drainType: string = "webhook"): Promise<any> {
+    return this.request("POST", "/api/v1/projects/log-drains", { project_id: projectId, url, drain_type: drainType });
+  }
+
+  /**
+   * List external log drains attached to a project.
+   */
+  async listLogDrains(projectId: string): Promise<any> {
+    return this.request("GET", `/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Delete an external log drain from a project.
+   */
+  async deleteLogDrain(projectId: string, drainId: string): Promise<any> {
+    return this.request("DELETE", `/api/v1/projects/log-drains?project_id=${encodeURIComponent(projectId)}&drain_id=${encodeURIComponent(drainId)}`);
+  }
+
+  /**
+   * Fetch current organization/developer wallet credit balance and reserve limits.
+   */
+  async getWallet(): Promise<any> {
+    return this.request("GET", "/api/v1/billing/wallet");
+  }
+
+  /**
+   * List historical billing invoices, receipts, and credit ledger deductions.
+   */
+  async listInvoices(orgSlug?: string): Promise<any> {
+    const q = orgSlug ? `?org_slug=${encodeURIComponent(orgSlug)}` : "";
+    const res = await this.request("GET", `/api/v1/billing/invoices${q}`);
+    return res ?? [];
+  }
+
+  /**
+   * Configure Edge Web Application Firewall (WAF) and DDoS dampening for a project.
+   */
+  async configureWaf(projectId: string, config: { enabled?: boolean; rateLimitRps?: number; challengeMode?: boolean } = {}): Promise<any> {
+    return this.request("POST", "/api/v1/projects/waf", { project_id: projectId, ...config });
+  }
+
+  /**
+   * Inspect current Edge WAF configuration for a project.
+   */
+  async getWaf(projectId: string): Promise<any> {
+    return this.request("GET", `/api/v1/projects/waf?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Configure dynamic horizontal & vertical autoscaling parameters for a project.
+   */
+  async configureScaling(projectId: string, config: { minReplicas?: number; maxReplicas?: number; targetCpuPercent?: number } = {}): Promise<any> {
+    return this.request("POST", "/api/v1/projects/scaling", { project_id: projectId, ...config });
+  }
+
+  /**
+   * Inspect current autoscaling parameters for a project.
+   */
+  async getScaling(projectId: string): Promise<any> {
+    return this.request("GET", `/api/v1/projects/scaling?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Register a custom edge routing rule for a project.
+   */
+  async addRoute(projectId: string, route: { source: string; destination: string; type?: string }): Promise<any> {
+    return this.request("POST", "/api/v1/projects/routes", { project_id: projectId, ...route });
+  }
+
+  /**
+   * List custom edge routing rules for a project.
+   */
+  async listRoutes(projectId: string): Promise<any> {
+    return this.request("GET", `/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}`);
+  }
+
+  /**
+   * Delete a custom edge routing rule from a project.
+   */
+  async deleteRoute(projectId: string, routeId: string): Promise<any> {
+    return this.request("DELETE", `/api/v1/projects/routes?project_id=${encodeURIComponent(projectId)}&route_id=${encodeURIComponent(routeId)}`);
+  }
+
+  /**
+   * Dual-Probe: Execute physical hardware health and network reachability probe.
+   */
+  async dualProbe(target: string = "all"): Promise<any> {
+    try {
+      return await this.request("POST", "/api/v1/health/dual-probe", { target });
+    } catch {
+      return await this.request("GET", "/healthz");
+    }
   }
 }

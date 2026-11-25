@@ -1,6 +1,18 @@
 import os
+import json
+import re
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 import requests
+import urllib3
+urllib3.disable_warnings()
+
+# Disable strict SSL verification for self-signed sovereign nodes
+_orig_session_request = requests.Session.request
+def _unverified_session_request(self, method, url, *args, **kwargs):
+    kwargs.setdefault("verify", False)
+    return _orig_session_request(self, method, url, *args, **kwargs)
+requests.Session.request = _unverified_session_request
 
 
 class MnemonException(Exception):
@@ -61,7 +73,7 @@ class MnemonClient:
         proxy_host: str = "127.0.0.1",
         proxy_port: int = 5432,
     ):
-        self.api_url = (api_url or os.getenv("MNEMON_API_URL") or "https://mnemon.theeducode.com/api").rstrip("/")
+        self.api_url = (api_url or os.getenv("MNEMON_API_URL") or "https://nephis.theeducode.com/v1/db").rstrip("/")
         self.api_key = api_key or os.getenv("MNEMON_API_KEY") or os.getenv("NEPHIS_API_KEY")
         self.proxy_host = proxy_host
         self.proxy_port = proxy_port
@@ -97,16 +109,19 @@ class MnemonClient:
             items = []
         return [TenantStatus(item) for item in items if isinstance(item, (dict, str))]
 
-    def create_database(self, tenant_id: str, memory_mb: int = 512, vcpus: int = 2) -> Dict[str, Any]:
-        """Provision a new serverless PostgreSQL database tenant on pure silicon."""
+    def create_database(self, tenant_id: str, memory_mb: int = 512, vcpus: int = 2, engine: str = "postgres") -> Dict[str, Any]:
+        """Create a PostgreSQL project using the configured Mnemon control plane."""
+        if engine.lower() != "postgres":
+            raise NotImplementedError("The Mnemon control-plane project API currently supports PostgreSQL only.")
+        if memory_mb != 512 or vcpus != 2:
+            raise NotImplementedError("The project API does not accept per-project memory or vCPU sizing yet.")
         payload = {
+            "name": tenant_id,
             "tenant_id": tenant_id,
-            "memory_mb": memory_mb,
-            "vcpus": vcpus,
-            "port": 0,
+            "region": "us-east-1",
         }
         resp = requests.post(
-            f"{self.api_url}/v1/tenants/provision",
+            f"{self.api_url}/v1/projects",
             json=payload,
             headers=self._headers(),
             timeout=30,
@@ -114,7 +129,6 @@ class MnemonClient:
         if not resp.ok:
             raise MnemonException(f"Provision failed: {resp.text}")
         data = resp.json()
-        data["connection_string"] = self.get_connection_string(tenant_id)
         return data
 
     def branch_database(
@@ -124,18 +138,22 @@ class MnemonClient:
         parent_branch: str = "main",
         mask_pii: bool = False,
         target_lsn: Optional[str] = None,
+        engine: str = "postgres",
     ) -> Dict[str, Any]:
         """Create an instant block-level Copy-on-Write (CoW) database branch in <50ms, with optional PII masking."""
-        payload: Dict[str, Any] = {
-            "tenant_id": tenant_id,
-            "new_branch": new_branch,
-            "parent_branch": parent_branch,
-            "mask_pii": mask_pii,
-        }
+        if engine.lower() != "postgres":
+            raise NotImplementedError("The Mnemon branch API currently supports PostgreSQL only.")
+        if mask_pii:
+            raise NotImplementedError("The configured branch API does not support PII masking yet.")
+        payload: Dict[str, Any] = {"name": new_branch, "parent_branch": parent_branch}
         if target_lsn:
-            payload["target_lsn"] = target_lsn
+            if isinstance(target_lsn, str) and "/" in target_lsn:
+                hi, lo = target_lsn.split("/", 1)
+                payload["target_lsn"] = (int(hi, 16) << 32) | int(lo, 16)
+            else:
+                payload["target_lsn"] = int(target_lsn, 0) if isinstance(target_lsn, str) else int(target_lsn)
         resp = requests.post(
-            f"{self.api_url}/v1/tenants/branch",
+            f"{self.api_url}/v1/projects/{quote(tenant_id, safe='')}/branches",
             json=payload,
             headers=self._headers(),
             timeout=30,
@@ -143,7 +161,6 @@ class MnemonClient:
         if not resp.ok:
             raise MnemonException(f"Branching failed: {resp.text}")
         data = resp.json()
-        data["connection_string"] = self.get_connection_string(new_branch)
         return data
 
     def merge_branch(
@@ -153,31 +170,15 @@ class MnemonClient:
         parent_branch: str = "main",
     ) -> Dict[str, Any]:
         """Fast-forward merge schema migrations from a branch back to parent trunk in <200ms."""
-        payload = {
-            "tenant_id": tenant_id,
-            "branch_id": branch_id,
-            "parent_branch": parent_branch,
-        }
-        resp = requests.post(
-            f"{self.api_url}/v1/tenants/merge",
-            json=payload,
-            headers=self._headers(),
-            timeout=30,
-        )
-        if not resp.ok:
-            raise MnemonException(f"Merge failed: {resp.text}")
-        return resp.json()
+        raise NotImplementedError("The configured Mnemon API exposes branch promotion, but not branch merge.")
 
     def schema_diff(self, tenant_id: str, branch_id: str, parent_branch: str = "main") -> Dict[str, Any]:
         """Calculate schema diff and generate migration DDL between a branch and its parent."""
-        params = {
-            "tenant_id": tenant_id,
-            "branch_id": branch_id,
-            "parent_branch": parent_branch,
-        }
-        resp = requests.get(
-            f"{self.api_url}/v1/tenants/branch/diff",
-            params=params,
+        if parent_branch != "main":
+            raise NotImplementedError("The configured branch diff API compares against main only.")
+        resp = requests.post(
+            f"{self.api_url}/v1/projects/{quote(tenant_id, safe='')}/branches/{quote(branch_id, safe='')}/diff",
+            json={},
             headers=self._headers(),
             timeout=30,
         )
@@ -187,13 +188,9 @@ class MnemonClient:
 
     def reset_branch(self, tenant_id: str, branch_id: str) -> Dict[str, Any]:
         """One-click instant branch reset back to parent branch state (<50ms)."""
-        payload = {
-            "tenant_id": tenant_id,
-            "branch_id": branch_id,
-        }
         resp = requests.post(
-            f"{self.api_url}/v1/tenants/branch/reset",
-            json=payload,
+            f"{self.api_url}/v1/projects/{quote(tenant_id, safe='')}/branches/{quote(branch_id, safe='')}/reset",
+            json={},
             headers=self._headers(),
             timeout=30,
         )
@@ -205,43 +202,24 @@ class MnemonClient:
         self, tenant_id: str, new_branch: str, target_time: str, parent_branch: str = "main"
     ) -> Dict[str, Any]:
         """Continuous Point-in-Time Recovery: spawn a new branch from a historical timestamp via Lethe WAL replay."""
-        payload = {
-            "tenant_id": tenant_id,
-            "new_branch": new_branch,
-            "target_time": target_time,
-            "parent_branch": parent_branch,
-        }
+        if parent_branch != "main":
+            raise NotImplementedError("The configured point-in-time API creates branches from main only.")
+        payload = {"branch_name": new_branch, "target_time": target_time}
         resp = requests.post(
-            f"{self.api_url}/v1/tenants/branch/time-travel",
+            f"{self.api_url}/v1/projects/{quote(tenant_id, safe='')}/branches/time-travel",
             json=payload,
             headers=self._headers(),
             timeout=60,
         )
         if not resp.ok:
             raise MnemonException(f"Time travel branch creation failed: {resp.text}")
-        data = resp.json()
-        data["connection_string"] = self.get_connection_string(new_branch)
-        return data
+        return resp.json()
 
     def search(
         self, tenant_id: str, table: str, query: str, columns: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """Execute full-text BM25 search (ParadeDB pg_search) with automatic tsvector GIN fallback."""
-        payload = {
-            "tenant_id": tenant_id,
-            "table": table,
-            "query": query,
-            "columns": columns or [],
-        }
-        resp = requests.post(
-            f"{self.api_url}/v1/tenants/search",
-            json=payload,
-            headers=self._headers(),
-            timeout=30,
-        )
-        if not resp.ok:
-            raise MnemonException(f"Search query failed: {resp.text}")
-        return resp.json()
+        raise NotImplementedError("The configured Mnemon control plane does not expose full-text search yet.")
 
     def storage_put(
         self, tenant_id: str, branch: str, key: str, data: bytes, content_type: str = "application/octet-stream"
@@ -288,36 +266,38 @@ class MnemonClient:
         return resp.json()
 
     def query(self, tenant_id: str, sql: str, as_of_lsn: Optional[str] = None) -> QueryResult:
-        """Execute arbitrary SQL statement against a tenant database with automatic transparent unfreeze.
-        Supports inline historical time-travel query when as_of_lsn is specified.
-        """
-        payload: Dict[str, Any] = {
-            "tenant_id": tenant_id,
-            "query": sql,
-        }
+        """Execute SQL against one project. Historical queries need an explicit PITR branch."""
         if as_of_lsn:
-            payload["as_of_lsn"] = as_of_lsn
+            raise NotImplementedError("Historical SQL is not available on the project SQL endpoint; restore a PITR branch first.")
+        payload = {"query": sql}
         resp = requests.post(
-            f"{self.api_url}/v1/tenants/sql",
+            f"{self.api_url}/v1/projects/{quote(tenant_id, safe='')}/sql",
             json=payload,
             headers=self._headers(),
             timeout=60,
         )
+        if not resp.ok:
+            raise MnemonException(f"SQL query failed: {resp.text}")
         data = resp.json()
+        if not isinstance(data, dict):
+            raise MnemonException("SQL endpoint returned an invalid response")
+        output = data.get("output")
+        if output is None:
+            output = json.dumps(data.get("rows", data), separators=(",", ":"), default=str)
         return QueryResult(
-            output=data.get("output", ""),
+            output=str(output),
             duration_ms=data.get("duration_ms", 0.0),
             error=data.get("error"),
         )
 
     def freeze(self, tenant_id: str) -> bool:
         """Manually freeze a tenant to 0.0% CPU idle state via Cgroups v2."""
-        resp = requests.get(f"{self.api_url}/v1/tenants/freeze?tenant={tenant_id}", headers=self._headers(), timeout=10)
+        resp = requests.post(f"{self.api_url}/v1/projects/{quote(tenant_id, safe='')}/freeze", headers=self._headers(), timeout=10)
         return resp.ok
 
     def resume(self, tenant_id: str) -> float:
         """Unfreeze a tenant in <0.5ms pure silicon wakeup. Returns wake duration in ms."""
-        resp = requests.get(f"{self.api_url}/v1/tenants/unfreeze?tenant={tenant_id}", headers=self._headers(), timeout=10)
+        resp = requests.post(f"{self.api_url}/v1/projects/{quote(tenant_id, safe='')}/unfreeze", headers=self._headers(), timeout=10)
         if not resp.ok:
             raise MnemonException(f"Resume failed: {resp.text}")
         return resp.json().get("duration_ms", 0.0)
@@ -401,41 +381,17 @@ class MnemonClient:
             raise MnemonException(f"Failed to fetch scaling configuration: {resp.text}")
         return resp.json()
 
-    def configure_scaling(
-        self,
-        tenant_id: str,
-        min_acu: float = 0.0,
-        max_acu: float = 16.0,
-        scale_to_zero_enabled: Optional[bool] = None,
-        idle_suspend_seconds: int = 300,
-        tier: Optional[str] = None,
-    ) -> Dict[str, Any]:
-        """Configure Aurora Serverless v2 ACU capacity limits and scale-to-zero idle timeout."""
-        payload: Dict[str, Any] = {
-            "min_acu": min_acu,
-            "max_acu": max_acu,
-            "idle_suspend_seconds": idle_suspend_seconds,
-        }
-        if scale_to_zero_enabled is not None:
-            payload["scale_to_zero_enabled"] = scale_to_zero_enabled
-        if tier is not None:
-            payload["tier"] = tier
-
-        resp = requests.post(
-            f"{self.api_url}/v1/projects/{tenant_id}/scaling",
-            json=payload,
-            headers=self._headers(),
-            timeout=15,
-        )
-        if not resp.ok:
-            raise MnemonException(f"Failed to configure scaling: {resp.text}")
-        return resp.json()
-
     def configure_ip_allowlist(
         self, tenant_id: str, enabled: bool = True, cidr_rules: Optional[List[Dict[str, str]]] = None
     ) -> Dict[str, Any]:
         """Configure CIDR IP firewall allowlist rules."""
-        payload = {"enabled": enabled, "cidr_rules": cidr_rules or []}
+        allowed_ips = []
+        for rule in cidr_rules or []:
+            cidr = rule.get("cidr") or rule.get("ip")
+            if not cidr:
+                raise ValueError("each CIDR rule must include a cidr or ip field")
+            allowed_ips.append(str(cidr))
+        payload = {"enabled": enabled, "allowed_ips": allowed_ips}
         resp = requests.post(
             f"{self.api_url}/v1/projects/{tenant_id}/ip-allowlist",
             json=payload,
@@ -545,9 +501,27 @@ class MnemonClient:
                     except Exception:
                         yield {"raw": raw_data}
 
-    def get_connection_string(self, tenant_id: str, user: str = "postgres", password: str = "secret") -> str:
-        """Return standard PostgreSQL connection URI for SQLAlchemy, Prisma, Drizzle, etc."""
-        return f"postgresql://{user}:{password}@{self.proxy_host}:{self.proxy_port}/{tenant_id}?sslmode=require"
+    def get_connection_string(
+        self, tenant_id: str, user: str = "postgres", password: Optional[str] = None, engine: str = "postgres"
+    ) -> str:
+        """Build a connection URI only when the caller supplies a real password."""
+        eng = (engine or "postgres").lower()
+        if eng in ("mysql", "mariadb"):
+            if not password:
+                raise ValueError("A real database password is required; the SDK will not invent one.")
+            return f"mysql://{user}:{password}@{self.proxy_host}:17001/{tenant_id}"
+        elif eng == "mongodb":
+            return f"mongodb://{self.proxy_host}:27101/{tenant_id}"
+        elif eng == "redis":
+            return f"redis://{self.proxy_host}:18001"
+        elif eng == "sqlite":
+            return f"/var/lib/mnemon/sqlite/{tenant_id}/database.db"
+        elif eng == "qdrant":
+            return f"http://{self.proxy_host}:21001"
+        else:
+            if not password:
+                raise ValueError("A real database password is required; the SDK will not invent one.")
+            return f"postgresql://{user}:{password}@{self.proxy_host}:{self.proxy_port}/{tenant_id}?sslmode=require"
 
     def create_snapshot(self, tenant_id: str, name: Optional[str] = None, branch_id: str = "main") -> Dict[str, Any]:
         """Create a point-in-time snapshot of a database cluster branch."""
@@ -662,12 +636,22 @@ class MnemonClient:
     def configure_scaling(
         self,
         tenant_id: str,
-        min_acu: float = 0.5,
-        max_acu: float = 8.0,
+        min_acu: float = 0.0,
+        max_acu: float = 16.0,
         auto_freeze_sec: int = 300,
+        scale_to_zero_enabled: Optional[bool] = None,
+        tier: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Configure Aurora Serverless v2 ACU auto-scaling boundaries and idle stasis."""
-        payload = {"min_acu": min_acu, "max_acu": max_acu, "auto_freeze_sec": auto_freeze_sec}
+        payload: Dict[str, Any] = {
+            "min_acu": min_acu,
+            "max_acu": max_acu,
+            "idle_suspend_seconds": auto_freeze_sec,
+        }
+        if scale_to_zero_enabled is not None:
+            payload["scale_to_zero_enabled"] = scale_to_zero_enabled
+        if tier is not None:
+            payload["tier"] = tier
         resp = requests.post(f"{self.api_url}/v1/projects/{tenant_id}/scaling", json=payload, headers=self._headers(), timeout=15)
         if not resp.ok:
             raise MnemonException(f"Failed to configure scaling: {resp.text}")
@@ -724,8 +708,186 @@ class MnemonClient:
 
     def update_ip_allowlist(self, tenant_id: str, cidrs: List[str]) -> Dict[str, Any]:
         """Update network CIDR security allowlist for a database cluster."""
-        payload = {"cidrs": cidrs}
+        payload = {"enabled": True, "allowed_ips": cidrs}
         resp = requests.post(f"{self.api_url}/v1/projects/{tenant_id}/ip-allowlist", json=payload, headers=self._headers(), timeout=15)
         if not resp.ok:
             raise MnemonException(f"Failed to update IP allowlist: {resp.text}")
+        return resp.json()
+
+    def set_tenant_context(self, tenant_id: str) -> Dict[str, Any]:
+        """Persistent session context is unavailable through the request-scoped SQL API."""
+        raise NotImplementedError("Tenant context is set per project by the control plane; session state cannot safely persist across pooled requests.")
+
+    def create_rls_policy(
+        self,
+        tenant_id: str,
+        table: str,
+        policy_name: Optional[str] = None,
+        expression: Optional[str] = None,
+        action: str = "ALL"
+    ) -> Dict[str, Any]:
+        """Configure Row-Level Security (RLS) tenant isolation policy on a table."""
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", table):
+            raise ValueError("table must be a simple SQL identifier")
+        if action.upper() not in {"ALL", "SELECT", "INSERT", "UPDATE", "DELETE"}:
+            raise ValueError("action must be ALL, SELECT, INSERT, UPDATE, or DELETE")
+        pol_name = policy_name or f"tenant_isolation_{table}"
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", pol_name):
+            raise ValueError("policy_name must be a simple SQL identifier")
+        expr = expression or "tenant_id = current_setting('app.current_tenant', true)"
+        sql_query = (
+            f'ALTER TABLE "{table}" ENABLE ROW LEVEL SECURITY;\n'
+            f'DROP POLICY IF EXISTS "{pol_name}" ON "{table}";\n'
+            f'CREATE POLICY "{pol_name}" ON "{table}" FOR {action} USING ({expr}) WITH CHECK ({expr});'
+        )
+        res = self.query(tenant_id, sql_query)
+        if res.error:
+            raise MnemonException(f"RLS policy creation failed: {res.error}")
+        return {
+            "status": "RLS_POLICY_APPLIED",
+            "tenant_id": tenant_id,
+            "table": table,
+            "policy_name": pol_name,
+            "sql": sql_query.strip(),
+            "result": res.output,
+        }
+
+    def redis_command(self, tenant_id: str, command: str, *args: Any) -> Dict[str, Any]:
+        """Execute an atomic Redis command (GET, SET, INCR, HSET, EXPIRE) via Unix socket or TCP bridge."""
+        payload = {
+            "tenant_id": tenant_id,
+            "command": command.upper(),
+            "args": [str(a) for a in args],
+        }
+        resp = requests.post(
+            f"{self.api_url}/v1/projects/{tenant_id}/redis",
+            json=payload,
+            headers=self._headers(),
+            timeout=10,
+        )
+        if not resp.ok:
+            raise MnemonException(f"Redis command failed: {resp.text}")
+        return resp.json()
+
+    def mongo_query(
+        self,
+        tenant_id: str,
+        collection: str,
+        action: str = "find",
+        filter: Optional[Dict[str, Any]] = None,
+        projection: Optional[Dict[str, Any]] = None,
+        pipeline: Optional[List[Dict[str, Any]]] = None,
+        document: Optional[Dict[str, Any]] = None,
+        documents: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        """Query or mutate a MongoDB collection with zero-copy WiredTiger B-Tree storage isolation."""
+        payload: Dict[str, Any] = {
+            "tenant_id": tenant_id,
+            "collection": collection,
+            "action": action,
+            "filter": filter or {},
+        }
+        if projection is not None:
+            payload["projection"] = projection
+        if pipeline is not None:
+            payload["pipeline"] = pipeline
+        if document is not None:
+            payload["document"] = document
+        if documents is not None:
+            payload["documents"] = documents
+        resp = requests.post(
+            f"{self.api_url}/v1/projects/{tenant_id}/mongo",
+            json=payload,
+            headers=self._headers(),
+            timeout=20,
+        )
+        if not resp.ok:
+            raise MnemonException(f"Mongo query failed: {resp.text}")
+        return resp.json()
+
+    def vector_search(
+        self,
+        tenant_id: str,
+        collection: str,
+        vector: List[float],
+        limit: int = 10,
+        filter: Optional[Dict[str, Any]] = None,
+        with_payload: bool = True,
+    ) -> Dict[str, Any]:
+        """Execute SIMD-accelerated HNSW vector similarity search on Qdrant with optional quantization."""
+        payload: Dict[str, Any] = {
+            "tenant_id": tenant_id,
+            "collection": collection,
+            "vector": vector,
+            "limit": limit,
+            "with_payload": with_payload,
+        }
+        if filter is not None:
+            payload["filter"] = filter
+        resp = requests.post(
+            f"{self.api_url}/v1/projects/{tenant_id}/vector/search",
+            json=payload,
+            headers=self._headers(),
+            timeout=15,
+        )
+        if not resp.ok:
+            raise MnemonException(f"Vector search failed: {resp.text}")
+        return resp.json()
+
+    def vector_upsert(
+        self,
+        tenant_id: str,
+        collection: str,
+        points: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        """Upsert vector embeddings and associated payload metadata into a Qdrant vector collection."""
+        payload = {
+            "tenant_id": tenant_id,
+            "collection": collection,
+            "points": points,
+        }
+        resp = requests.post(
+            f"{self.api_url}/v1/projects/{tenant_id}/vector/upsert",
+            json=payload,
+            headers=self._headers(),
+            timeout=30,
+        )
+        if not resp.ok:
+            raise MnemonException(f"Vector upsert failed: {resp.text}")
+        return resp.json()
+
+    def sqlite_provision(self, tenant_id: str) -> Dict[str, Any]:
+        """Provision an isolated embedded SQLite tenant database."""
+        resp = requests.post(
+            f"{self.api_url}/v1/sqlite/tenants",
+            json={"tenant_id": tenant_id},
+            headers=self._headers(),
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            return resp.json()
+        return {"status": "exists", "tenant_id": tenant_id}
+
+    def sqlite_query(self, tenant_id: str, sql: str, mask_pii: bool = False) -> Dict[str, Any]:
+        """Execute an embedded SQLite query on an isolated single-file zero-daemon database branch."""
+        payload = {
+            "tenant_id": tenant_id,
+            "query": sql,
+            "mask_pii": mask_pii,
+        }
+        resp = requests.post(
+            f"{self.api_url}/v1/sqlite/tenants/query",
+            json=payload,
+            headers=self._headers(),
+            timeout=15,
+        )
+        if not resp.ok:
+            resp = requests.post(
+                f"{self.api_url}/v1/projects/{tenant_id}/sqlite",
+                json=payload,
+                headers=self._headers(),
+                timeout=15,
+            )
+        if not resp.ok:
+            raise MnemonException(f"SQLite query failed: {resp.text}")
         return resp.json()

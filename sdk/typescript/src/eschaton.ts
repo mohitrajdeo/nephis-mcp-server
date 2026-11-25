@@ -48,18 +48,21 @@ export class EschatonClient {
 
   constructor(options: EschatonClientOptions = {}) {
     const envUrl = typeof process !== "undefined" && process.env
-      ? (process.env.ESCHATON_GATEWAY_URL || process.env.NEPHIS_BASE_URL || process.env.THANATON_API_URL)
+      ? (process.env.ESCHATON_GATEWAY_URL || process.env.NEPHIS_BASE_URL)
       : undefined;
     const envKey = typeof process !== "undefined" && process.env
-      ? (process.env.ESCHATON_API_KEY || process.env.NEPHIS_API_KEY || process.env.THANATON_API_KEY)
+      ? (process.env.ESCHATON_API_KEY || process.env.NEPHIS_API_KEY)
       : undefined;
 
-    this.baseUrl = (options.baseUrl || envUrl || "https://compiler.theeducode.com").replace(/\/+$/, "");
-    this.apiKey = options.apiKey || envKey || "esk_live_e3166f58935ad1b1396b828d75ee23f5ed02a0c1440c37735c098612";
-    this.timeoutMs = options.timeoutMs || 30000;
+    this.baseUrl = (options.baseUrl || envUrl || "https://nephis.theeducode.com").replace(/\/+$/, "");
+    this.apiKey = options.apiKey || envKey || "";
+    this.timeoutMs = options.timeoutMs || 60000;
   }
 
-  private async request<T = any>(method: string, path: string, body?: any): Promise<T> {
+  private async request<T = any>(method: string, path: string, body?: any, extraHeaders: Record<string, string> = {}): Promise<T> {
+    if (!this.apiKey) {
+      throw new EschatonError("Set ESCHATON_API_KEY or pass apiKey when creating EschatonClient.");
+    }
     const url = `${this.baseUrl}${path}`;
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
@@ -71,89 +74,130 @@ export class EschatonClient {
       headers["Authorization"] = `Bearer ${this.apiKey}`;
       headers["X-API-Key"] = this.apiKey;
     }
-
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
-
-    try {
-      const res = await fetch(url, {
-        method,
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-        signal: controller.signal,
-      });
-
-      if (!res.ok) {
-        // Fallback from /v1/execute to /execute if 404/405
-        if ((res.status === 404 || res.status === 405) && path === "/v1/execute") {
-          clearTimeout(timeout);
-          return this.request<T>(method, "/execute", body);
-        }
-        const errText = await res.text();
-        throw new EschatonError(`Eschaton API error [HTTP ${res.status}]: ${errText}`, res.status, errText);
-      }
-
-      return await res.json();
-    } finally {
-      clearTimeout(timeout);
+    if (method.toUpperCase() === "POST" && path === "/v1/execute" && !extraHeaders["Idempotency-Key"]) {
+      extraHeaders = { ...extraHeaders, "Idempotency-Key": crypto.randomUUID() };
     }
+    Object.assign(headers, extraHeaders);
+
+    let lastError: any = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+
+      try {
+        const res = await fetch(url, {
+          method,
+          headers,
+          body: body ? JSON.stringify(body) : undefined,
+          signal: controller.signal,
+        });
+
+        if (!res.ok) {
+          // Fallback from /v1/execute to /execute if 404/405
+          if ((res.status === 404 || res.status === 405) && path === "/v1/execute") {
+            clearTimeout(timeout);
+            return this.request<T>(method, "/execute", body, extraHeaders);
+          }
+          const errText = await res.text();
+          if ([502, 503, 504].includes(res.status) && attempt < 2) {
+            clearTimeout(timeout);
+            await new Promise((r) => setTimeout(r, 400 * (attempt + 1)));
+            continue;
+          }
+          throw new EschatonError(`Eschaton API error [HTTP ${res.status}]: ${errText}`, res.status, errText);
+        }
+
+        return await res.json();
+      } catch (err: any) {
+        lastError = err;
+        if (err instanceof EschatonError) {
+          throw err;
+        }
+        if (attempt < 2 && (err.name === "TypeError" || err.name === "AbortError" || err.message?.includes("fetch failed") || err.message?.includes("aborted"))) {
+          await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+          continue;
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+    throw lastError;
   }
 
   /**
    * Run a single code execution synchronously in <38ms.
    */
   async execute(params: {
-    sourceCode: string;
+    sourceCode?: string;
+    source_code?: string;
     languageId?: number;
+    language_id?: number;
     stdin?: string;
     expectedOutput?: string;
+    expected_output?: string;
     suite?: string;
+    idempotencyKey?: string;
   }): Promise<ExecuteSuiteResult> {
+    const resolvedCode = params.sourceCode || params.source_code || "";
+    const resolvedLang = params.languageId ?? params.language_id ?? 71;
     const tc: TestCaseSpec = { id: 1, stdin: params.stdin ?? "" };
     if (params.expectedOutput !== undefined) {
       tc.expected_output = params.expectedOutput;
+    } else if (params.expected_output !== undefined) {
+      tc.expected_output = params.expected_output;
     }
     return this.executeSuite({
-      sourceCode: params.sourceCode,
-      languageId: params.languageId ?? 71,
-      suite: params.suite ?? "Omni",
+      sourceCode: resolvedCode,
+      languageId: resolvedLang,
+      suite: params.suite ?? "Apex",
       testCases: [tc],
+      idempotencyKey: params.idempotencyKey,
     });
   }
 
   /**
-   * Dispatch against any of the 10 Eschaton assessment suites:
-   * Omni, Apex, Void, Complexity, Sanitizer, MemoryProfile, FileIO, DBMS, SpecialJudge.
+   * Dispatch against any of Eschaton's assessment suites:
+   * Apex (hard-isolated multi-core, default), Void (sub-4ms in-memory microkernel),
+   * Complexity, Sanitizer, MemoryProfile, FileIO, DBMS, SpecialJudge. (Omni is deprecated).
    */
-  async executeSuite(params: ExecuteSuiteOptions): Promise<ExecuteSuiteResult> {
+  async executeSuite(params: ExecuteSuiteOptions & { source_code?: string; language_id?: number; test_cases?: TestCaseSpec[] }): Promise<ExecuteSuiteResult> {
+    const resolvedCode = params.sourceCode || params.source_code || "";
+    const resolvedLang = params.languageId ?? params.language_id ?? 71;
+    const resolvedCases = params.testCases || params.test_cases;
     const payload: Record<string, any> = {
-      language_id: params.languageId ?? 71,
-      source_code: params.sourceCode,
-      suite: params.suite ?? "Omni",
-      test_cases: params.testCases && params.testCases.length > 0
-        ? params.testCases
+      language_id: resolvedLang,
+      source_code: resolvedCode,
+      suite: params.suite ?? "Apex",
+      test_cases: resolvedCases && resolvedCases.length > 0
+        ? resolvedCases
         : [{ id: 1, stdin: "", expected_output: "" }],
     };
     if (params.database) payload.database = params.database;
     if (params.checkerCode) {
       payload.checker_code = params.checkerCode;
-      payload.checker_language_id = params.checkerLanguageId ?? params.languageId ?? 71;
+      payload.checker_language_id = params.checkerLanguageId ?? resolvedLang;
     }
     if (params.verbose !== undefined) payload.verbose = params.verbose;
-    return this.request<ExecuteSuiteResult>("POST", "/v1/execute", payload);
+    const requestHeaders: Record<string, string> = params.idempotencyKey ? { "Idempotency-Key": params.idempotencyKey } : {};
+    return this.request<ExecuteSuiteResult>("POST", "/v1/execute", payload, requestHeaders);
   }
 
   /**
    * High-throughput parallel testcase matrix execution.
    */
-  async batchExecute(params: BatchExecuteOptions): Promise<BatchExecuteResult> {
+  async batchExecute(params: BatchExecuteOptions & { source_code?: string; language_id?: number; test_cases?: any[] }): Promise<BatchExecuteResult> {
+    const resolvedCode = params.sourceCode || params.source_code || "";
+    const resolvedLang = params.languageId ?? params.language_id ?? 54;
+    const resolvedTests = params.tests || params.test_cases || [];
     const payload = {
-      language_id: params.languageId ?? 54,
-      source_code: params.sourceCode,
-      suite: params.suite ?? "Omni",
-      test_cases: params.tests,
+      language_id: resolvedLang,
+      source_code: resolvedCode,
+      suite: params.suite ?? "Apex",
+      test_cases: resolvedTests,
     };
-    return this.request<BatchExecuteResult>("POST", "/v1/execute", payload);
+    const requestHeaders: Record<string, string> = params.idempotencyKey ? { "Idempotency-Key": params.idempotencyKey } : {};
+    return this.request<BatchExecuteResult>("POST", "/v1/execute", payload, requestHeaders);
   }
 
   /**
@@ -260,11 +304,7 @@ export class EschatonClient {
    * Execute sub-50µs in-memory AST syntax safety verification.
    */
   async preflightCheck(sourceCode: string, languageId: number = 71): Promise<any> {
-    try {
-      return await this.request("POST", "/v1/preflight", { source_code: sourceCode, language_id: languageId });
-    } catch {
-      return { safe: true, syntax_valid: true, hazard_score: 0, ast_tokens: sourceCode.split(/\s+/).length };
-    }
+    return this.request("POST", "/v1/execute/preflight", { source_code: sourceCode, language_id: languageId });
   }
 
   /**
