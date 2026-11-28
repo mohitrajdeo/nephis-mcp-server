@@ -2,7 +2,7 @@
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "io.github.mohitrajdeo/nephis-mcp-server",
   "title": "NEPHIS MCP Server",
-  "description": "Sub-6ms microVM sandboxes, zero-copy Postgres branching, and fast code execution in ap-south-1.",
+  "description": "Low-latency microVM sandboxes, zero-copy Postgres branching, and fast code execution in ap-south-1.",
   "version": "1.0.7",
   "repository": {
     "url": "https://github.com/mohitrajdeo/nephis-mcp-server",

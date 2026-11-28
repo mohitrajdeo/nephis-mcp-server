@@ -1,39 +1,42 @@
 # NEPHIS Model Context Protocol (MCP) Server (`nephis-mcp-server`)
 
 > **The Unified MCP Control Plane for Autonomous AI Coding Agents.**  
-> Provides sub-6ms hardware KVM microVM sandboxes, 30ms zero-copy PostgreSQL branching, in-memory AST compiler pipelines, and kernel infrastructure to LLMs (Claude Desktop, Cursor, Windsurf, Devin, Antigravity).
+> Provides hardware-isolated KVM microVM sandboxes, zero-copy PostgreSQL branching, in-memory AST compiler pipelines, and kernel infrastructure to LLMs (Claude Desktop, Cursor, Windsurf, Devin, Antigravity).  
+> **Live evidence:** 10/10 selfcheck with caveats — https://eschaton.theeducode.com/proof  
+> **Scoped trial key:** https://eschaton.theeducode.com/trial  
+> **On numbers:** latency and throughput depend on workload. Older local-server figures are historical records of that work, not hosted-service claims.
 
 [![MCP Protocol](https://img.shields.io/badge/MCP-Protocol%202024--11--05-purple.svg)](https://modelcontextprotocol.io/)
 [![npm version](https://img.shields.io/npm/v/nephis-mcp-server.svg)](https://www.npmjs.com/package/nephis-mcp-server)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-[![Tools Count](https://img.shields.io/badge/Tools-92%20Production%20Tools-brightgreen.svg)](#-exhaustive-catalog-of-all-92-mcp-tools)
+[![Live Proof](https://img.shields.io/badge/Proof-10%2F10_selfcheck-10b981.svg)](https://eschaton.theeducode.com/proof)
 
 ---
 
 ## ⚡ Architecture Overview
 
 > 🌐 **Canonical Production Gateway:** [https://nephis.theeducode.com](https://nephis.theeducode.com)  
-> ⚡ **Eschaton Online Judge (Sub-38ms):** [https://eschaton.theeducode.com](https://eschaton.theeducode.com)  
-> 💻 **Thanaton MicroVM Studio (Sub-6ms):** [https://thanaton.theeducode.com](https://thanaton.theeducode.com)  
-> 🗄️ **Mnemon-DB Postgres Studio (31ms CoW):** [https://mnemon.theeducode.com](https://mnemon.theeducode.com)  
+> ⚡ **Eschaton Online Judge (Judge0-compatible):** [https://eschaton.theeducode.com](https://eschaton.theeducode.com)  
+> 💻 **Thanaton MicroVM Studio (Low-latency):** [https://thanaton.theeducode.com](https://thanaton.theeducode.com)  
+> 🗄️ **Mnemon-DB Postgres Studio (CoW):** [https://mnemon.theeducode.com](https://mnemon.theeducode.com)  
 > 💳 **Centralized Billing & Refill Hub:** [https://nephis.theeducode.com/billing](https://nephis.theeducode.com/billing)  
 > 🚀 **Single-Command Agent Launch:** `npx -y nephis-mcp-server`
 
 ---
 
-### ⚡ Autonomous Zero-Human PoW Self-Bootstrap (500 Free Credits • 30-Day Trial)
+### ⚡ Autonomous Zero-Human PoW Self-Bootstrap (Scoped 30-Day Trial Key)
 
 When an autonomous AI agent launches `nephis-mcp-server` without an explicit `NEPHIS_API_KEY`:
 1. The server automatically computes a local machine fingerprint (MAC, CPU, host) and requests a cryptographic Proof-of-Work challenge from the gateway.
-2. In **< 80 milliseconds**, it solves the challenge and claims an active **500 Starter Credit Developer Session** (`mrd_live_...`).
+2. It claims a scoped **500-credit developer session** (`mrd_live_...`).
 3. Credentials are saved locally to `~/.nephis/credentials.json` with automatic session renewal.
-4. **Zero human logins, zero credit cards, zero browser popups required.** Human developers can also claim their session with 1-click GitHub OAuth on [nephis.theeducode.com](https://nephis.theeducode.com) to upgrade to 2,000 monthly credits.
+4. **No browser popups are required to start.** Human developers can also claim their session with 1-click GitHub OAuth on [nephis.theeducode.com](https://nephis.theeducode.com) to move to a paid tier.
 
 The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants directly to bare-metal compute and database substrates across 4 core pillars:
-1. **THANATON (33 Tools):** Hardware KVM microVM sandboxes, sub-6ms boot, scale-to-zero stasis ($0 idle RAM), PTY terminals, Layer 4 port forwards, project deployments, custom domains, crons, webhooks, and SIEM drains.
-2. **MNEMON-DB (14 Tools):** 30ms zero-copy PostgreSQL 16 branching (XFS CoW reflinks), embedded vector search, schema diffing, and WAL rewind.
-3. **ESCHATON & NEPHIS (4 Tools):** Sub-38ms parallel online code judging, in-memory AST hazard detection (<50µs), 50-testcase fast-batch execution, and tenant whoami introspection.
-4. **KERNEL INFRASTRUCTURE (12 Tools):** Kernel systems, eBPF connection pooling, zero-copy S3 streaming pipes, tombstone crash autopsy, and live socket migration.
+1. **THANATON:** Hardware KVM microVM sandboxes, low-latency boot, scale-to-zero stasis ($0 idle RAM), PTY terminals, Layer 4 port forwards, project deployments, custom domains, crons, webhooks, and SIEM drains.
+2. **MNEMON-DB:** zero-copy PostgreSQL 16 branching (XFS CoW reflinks), embedded vector search, schema diffing, and WAL rewind.
+3. **ESCHATON & NEPHIS:** Judge0-compatible parallel online code judging, in-memory AST hazard detection (), 50-testcase fast-batch execution, and tenant whoami introspection.
+4. **KERNEL INFRASTRUCTURE:** Kernel systems, eBPF connection pooling, zero-copy S3 streaming pipes, tombstone crash autopsy, and live socket migration.
 
 ```
 ┌────────────────────────────────────────────────────────┐
@@ -42,13 +45,13 @@ The **NEPHIS MCP Server** connects LLMs and autonomous coding assistants directl
                             │ JSON-RPC 2.0 (stdio / SSE)
                             ▼
 ┌────────────────────────────────────────────────────────┐
-│ NEPHIS Unified MCP Server (92 Production Tools)        │
+│ NEPHIS Unified MCP Server (MCP tools)        │
 └───────┬───────────────────┬───────────────────┬────────┘
         │                   │                   │
         ▼                   ▼                   ▼
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │   THANATON   │    │  MNEMON-DB   │    │   ESCHATON   │
-│ MicroVMs &   │    │  Zero-Copy   │    │ Sub-38ms AST │
+│ MicroVMs &   │    │  Zero-Copy   │    │ Judge0-compatible AST │
 │ KVM Compute  │    │  PostgreSQL  │    │ Polyglot CI  │
 └──────────────┘    └──────────────┘    └──────────────┘
 ```
@@ -129,18 +132,18 @@ Add `nephis` to your project's `antigravity.json` or run `npx nephis-mcp-server`
 | Category | Count | Focus Areas |
 | :--- | :---: | :--- |
 | [THANATON (Compute, Deploy & Edge)](#1-thanaton--hardware-kvm-microvms--compute-sandboxes) | 33 | MicroVM boot, PTY, ports, secrets, volumes, projects, WAF, domains, crons, hooks, routes, drains, wallet, invoices |
-| [MNEMON-DB (Databases & Vector)](#2-mnemon-db--zero-copy-isolated-database-engine--branching) | 14 | 30ms CoW branching, SQL queries, schema diff, pgvector, WAL rewind |
+| [MNEMON-DB (Databases & Vector)](#2-mnemon-db--zero-copy-isolated-database-engine--branching) | 14 | CoW branching, SQL queries, schema diff, pgvector, WAL rewind |
 | [ESCHATON & NEPHIS (Execution & Identity)](#3-eschaton--nephis--autonomous-polyglot-code-execution--fast-batch) | 4 | AST preflight, 50-testcase fast-batch, compiler pipeline, whoami |
-| **Total Production Tools** | **63** | **100% Machine-Readable & Standardized** |
+| **Total** | see catalog | Machine-readable & standardized |
 
 ---
 
-## 🛠 Exhaustive Catalog of All 92 MCP Tools
+## 🛠 Catalog of MCP Tools
 
 
 ## THANATON • Hardware KVM MicroVMs & Compute Sandboxes
 
-Contains **24 production tools** specifically designed for agent autonomy.
+Contains production tools designed for agent autonomy.
 
 ### 1. `thanaton_exec_command`
 
@@ -151,7 +154,7 @@ Contains **24 production tools** specifically designed for agent autonomy.
 | Parameter | Type | Required | Default | Details & Constraints |
 | :--- | :--- | :---: | :---: | :--- |
 | `command` | `string` | ✅ Yes | - | The shell command to execute inside the MicroVM (e.g., 'python3 -c "print(2+2)"', 'npm test', 'git status') |
-| `sandbox_id` | `string` | ❌ No | - | Optional existing sandbox ID. If omitted, an ephemeral sub-6ms sandbox will be provisioned automatically. |
+| `sandbox_id` | `string` | ❌ No | - | Optional existing sandbox ID. If omitted, an ephemeral low-latency sandbox will be provisioned automatically. |
 | `timeout_ms` | `number` | ❌ No | - | Maximum execution timeout in milliseconds (default: 15000) |
 
 **Sample JSON-RPC Invocation:**
@@ -260,7 +263,7 @@ _No input parameters required._
 
 ### 5. `thanaton_wake_sandbox`
 
-> **Description:** Instantly wake a sleeping/hibernated MicroVM from NVMe memory snapshot in sub-6ms (<2ms with UFFD lazy-paging).
+> **Description:** Instantly wake a sleeping/hibernated MicroVM from NVMe memory snapshot in low-latency ().
 
 **Parameter Specification:**
 
@@ -461,7 +464,7 @@ _No input parameters required._
 
 ### 12. `thanaton_promote`
 
-> **Description:** Promote staging preview deployment snapshot to 100% production traffic in 6.4ms.
+> **Description:** Promote staging preview deployment snapshot to production traffic in .
 
 **Parameter Specification:**
 
@@ -657,7 +660,7 @@ _No input parameters required._
 
 ### 18. `thanaton_inject_secrets`
 
-> **Description:** Zero-rebuild environment variable and secret injection via Firecracker MMDS in <50µs without rebuilding the SquashFS rootfs.
+> **Description:** Zero-rebuild environment variable and secret injection via Firecracker MMDS in  without rebuilding the SquashFS rootfs.
 
 **Parameter Specification:**
 
@@ -892,7 +895,7 @@ Contains **14 production tools** specifically designed for agent autonomy.
 
 ### 26. `mnemon_create_branch`
 
-> **Description:** Fork an instant copy-on-write PostgreSQL database branch in 31ms at an exact WAL LSN without storage duplication.
+> **Description:** Fork an instant copy-on-write PostgreSQL database branch in  at an exact WAL LSN without storage duplication.
 
 **Parameter Specification:**
 
@@ -1256,7 +1259,7 @@ Contains **14 production tools** specifically designed for agent autonomy.
 
 ### 38. `mnemon_wal_rewind`
 
-> **Description:** 31ms Point-in-Time Recovery & WAL rewind: forks an isolated zero-copy CoW PostgreSQL branch from an arbitrary historical timestamp or LSN.
+> **Description:**  Point-in-Time Recovery & WAL rewind: forks an isolated zero-copy CoW PostgreSQL branch from an arbitrary historical timestamp or LSN.
 
 **Parameter Specification:**
 
@@ -1293,7 +1296,7 @@ Contains **3 production tools** specifically designed for agent autonomy.
 
 ### 39. `eschaton_preflight_check`
 
-> **Description:** In-memory AST syntax and hazard detection (<50µs): Detects infinite loops, fork bombs, and banned syscalls before microVM dispatch.
+> **Description:** In-memory AST syntax and hazard detection (): Detects infinite loops, fork bombs, and banned syscalls before microVM dispatch.
 
 **Parameter Specification:**
 
@@ -1322,7 +1325,7 @@ Contains **3 production tools** specifically designed for agent autonomy.
 
 ### 40. `nephis_fast_batch`
 
-> **Description:** 50-Testcase Parallel Fast-Batch: Dispatches up to 50 testcases in a single HTTP request to evaluate concurrently in 38ms parallel memory.
+> **Description:** 50-Testcase Parallel Fast-Batch: Dispatches up to 50 testcases in a single HTTP request to evaluate concurrently in low-latency parallel memory.
 
 **Parameter Specification:**
 
@@ -1477,7 +1480,7 @@ Beyond the Model Context Protocol (MCP) JSON-RPC transport, NEPHIS provides firs
 Available as a zero-dependency CLI wrapper (`sdk/cli/thanaton.bat` on Windows or `thanaton` on Linux):
 
 ```bash
-# Provision a sub-6ms hardware KVM MicroVM (512MB RAM, attached Postgres DB)
+# Provision a low-latency hardware KVM MicroVM (512MB RAM, attached Postgres DB)
 thanaton up --runtime microvm --memory-mb 512 --db
 
 # Execute arbitrary bash / terminal commands inside the isolated sandbox
@@ -1498,7 +1501,7 @@ thanaton display sbx-kvm-9f82d1 --out screenshot.jpg
 # Put sandbox into compressed stasis (Scale-to-Zero, $0 RAM burn)
 thanaton sleep sbx-kvm-9f82d1
 
-# Instant hardware cold-wake from stasis (Sub-6ms SLA)
+# Instant hardware cold-wake from stasis (low-latency)
 thanaton wake sbx-kvm-9f82d1
 
 # Expose a local MicroVM port for live browser preview (e.g. Next.js on port 3000)
@@ -1509,7 +1512,7 @@ thanaton ports expose sbx-kvm-9f82d1 --port 3000
 Available as a native CLI tool (`sdk/cli/mnemon.bat` on Windows or `mnemon` on Linux):
 
 ```bash
-# Instant zero-copy snapshot branch creation via Linux XFS reflink blocks (<31ms)
+# Instant zero-copy snapshot branch creation via Linux XFS reflink blocks (<)
 mnemon branch prod-db staging --parent main
 
 # Fork a sanitized branch with automated PII masking (emails, names, phones)
@@ -1538,7 +1541,7 @@ High-throughput compiler and parallel testcase runner (`scripts/eschatonctl.py`)
 # Single execution with instant in-memory microkernel (<3.4ms)
 eschatonctl run solution.cpp --lang 54 --stdin input.txt
 
-# Run 50 parallel testcases simultaneously in 38.2ms (Apex Fan-Out)
+# Run 50 parallel testcases simultaneously in measured latency (Apex Fan-Out)
 eschatonctl batch --source solution.cpp --testcases ./tests/ --parallel 50
 
 # Ultra-fast (12µs) in-memory AST hazard detection (fork bombs, infinite loops)
@@ -1553,17 +1556,17 @@ from nephis import NephisClient
 # Authenticate with your API key or rely on auto-bootstrapped credentials
 client = NephisClient(api_key="mrd_live_...")
 
-# 1. Thanaton: Spawn a sub-6ms MicroVM
+# 1. Thanaton: Spawn a low-latency MicroVM
 sandbox = client.thanaton.spawn(runtime="microvm", memory_mb=512)
 result = sandbox.exec("python3 -c 'print(42)'")
 print(result.stdout)  # 42
 sandbox.sleep()  # Scale-to-zero stasis ($0 ongoing cost)
 
-# 2. Mnemon-DB: Zero-copy PostgreSQL 16 branch in 30ms
+# 2. Mnemon-DB: Zero-copy PostgreSQL 16 branch
 branch = client.mnemon.create_branch("ai-agent-staging", parent="main")
 db_rows = branch.query("SELECT id, email FROM tenants LIMIT 5;")
 
-# 3. Eschaton: Sub-38ms batch code execution
+# 3. Eschaton: Judge0-compatible batch code execution
 run = client.eschaton.execute(
     language_id=54,  # C++
     source_code='#include <iostream>\nint main() { std::cout << "Done"; return 0; }'
@@ -1586,7 +1589,7 @@ const sbx = await nephis.thanaton.spawnSandbox({ runtime: 'microvm', memoryMb: 1
 const exec = await nephis.thanaton.execCommand(sbx.id, 'uname -a');
 console.log('Sandbox Kernel:', exec.stdout);
 
-// Create zero-copy database branch in 30ms
+// Create zero-copy database branch
 const branch = await nephis.mnemon.createBranch({
   branchName: 'pr-142',
   parentBranch: 'main'

@@ -1,7 +1,7 @@
 # nephis (TypeScript / Node.js SDK)
 
 > **Official TypeScript & Node.js SDK for the NEPHIS Systems Fabric.**  
-> Sub-6ms Hardware-Isolated MicroVM Sandboxes, 30ms Zero-Copy PostgreSQL Branching, and Sub-38ms Bare-Metal Code Execution for Autonomous AI Agents.
+> Low-latency Hardware-Isolated MicroVM Sandboxes, Zero-Copy PostgreSQL Branching, and Judge0-compatible Bare-Metal Code Execution for Autonomous AI Agents.
 
 [![npm version](https://img.shields.io/npm/v/nephis.svg)](https://www.npmjs.com/package/nephis)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -18,7 +18,7 @@
 
 | Feature / Metric | Standard Docker | E2B Sandbox | AWS Lambda | **NEPHIS MicroVM** |
 | :--- | :---: | :---: | :---: | :---: |
-| **Cold Start Latency** | 2,000ms – 10,000ms | 150ms – 400ms | 200ms – 1,500ms | **< 6.14ms (< 2ms with UFFD)** ⚡ |
+| **Cold Start Latency** | 2,000ms – 10,000ms | 150ms – 400ms | 200ms – 1,500ms | ** (< 2ms with UFFD)** ⚡ |
 | **Security Boundary** | Shared Linux Host Kernel | Container Sandbox | MicroVM (Firecracker) | **Hardware KVM + Cgroups v2 Jailer** 🔒 |
 | **Scale-to-Zero ($0 Idle)**| ❌ Dormant RAM used | ❌ Billed per second | ✅ (Stateless only) | **✅ NVMe Memory Snapshot ($0 RAM)** 💾 |
 | **Embedded PostgreSQL** | ❌ Manual setup | ❌ Extra container | ❌ None | **✅ Instant Bundled Postgres (10ms)** 🗄️ |
@@ -56,7 +56,7 @@ print("Euler's number:", math.e)
 
 console.log(result.stdout);                    // "Euler's number: 2.718281828459045"
 console.log(`Exit Code: ${result.exitCode}`);   // 0
-console.log(`Execution Latency: ${result.durationMs}ms`); // 38.2ms
+console.log(`Execution Latency: ${result.durationMs}ms`); // measured latency
 ```
 
 ---
@@ -112,7 +112,7 @@ const mnemon = new MnemonClient({
   apiUrl: "https://nephis.theeducode.com",
 });
 
-// 1. Fork production database in 30ms via XFS reflink CoW (0 bytes initial storage)
+// 1. Fork production database in via XFS reflink CoW
 const branch = await mnemon.createBranch({
   tenantId: "org_prod",
   newBranch: "agent_preview_branch",
@@ -157,12 +157,12 @@ console.log("Migration Status:", migration);
 
 | Operation | Engine | Credit Cost | Cost in USD ($0.0002/CR) | Substrate Guarantee |
 | :--- | :--- | :---: | :---: | :--- |
-| `client.runCode()` | Eschaton | **1.0 Credit** | $0.00020 | Sub-38ms bare-metal microkernel |
+| `client.runCode()` | Eschaton | **1.0 Credit** | $0.00020 | Judge0-compatible bare-metal microkernel |
 | `client.fastBatch()` | Eschaton | **1.0 CR / test** | $0.00020 / test | Up to 50 parallel testcases |
 | `client.sandboxes.create()` | Thanaton | **5.0 Credits** | $0.00100 | 4.82ms KVM cold boot |
 | `sandbox.exec()` | Thanaton | **1.0 Credit** | $0.00020 | Interactive PTY shell command |
 | `sandbox.sleep() / wake()` | Thanaton | **0.0 Credits** | **$0.00000** | Free scale-to-zero stasis ($0 idle RAM) |
-| `mnemon.createBranch()` | Mnemon | **2.0 Credits** | $0.00040 | 30ms XFS Reflink CoW fork |
+| `mnemon.createBranch()` | Mnemon | **2.0 Credits** | $0.00040 | XFS Reflink CoW fork |
 | `mnemon.executeSql()` | Mnemon | **1.0 Credit** | $0.00020 | Direct PostgreSQL 16 execution |
 | `mnemon.quantizeVectors()` | Mnemon | **3.0 Credits** | $0.00060 | pgvector HNSW-PQ vector quantization |
 | `mnemon.importDatabase()` | Mnemon | **10.0 Credits** | $0.00200 | Zero-downtime Neon/Supabase live cutover |

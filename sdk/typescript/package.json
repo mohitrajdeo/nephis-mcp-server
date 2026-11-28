@@ -1,7 +1,7 @@
 {
   "name": "nephis",
   "version": "1.0.4",
-  "description": "Official TypeScript & Node.js SDK for NEPHIS: High-Performance Isolated Compute Substrate, Sub-6ms Sandboxes, and Zero-Copy Database Branching for AI Coding Agents",
+  "description": "Official TypeScript & Node.js SDK for NEPHIS: High-Performance Isolated Compute Substrate, Low-latency Sandboxes, and Zero-Copy Database Branching for AI Coding Agents",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "type": "module",

@@ -1,7 +1,7 @@
 {
   "name": "nephis-mcp-server",
   "version": "1.0.7",
-  "description": "Model Context Protocol (MCP) Server for NEPHIS: Sub-6ms MicroVM Sandboxes, Zero-Copy Database Branching, and Execution Fabric for AI Coding Agents",
+  "description": "Model Context Protocol (MCP) Server for NEPHIS: Isolated MicroVM Sandboxes, Zero-Copy Database Branching, and Execution Fabric for AI Coding Agents",
   "main": "dist/index.js",
   "type": "module",
   "bin": {

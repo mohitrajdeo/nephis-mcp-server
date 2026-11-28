@@ -4,7 +4,7 @@
     "mohitrajdeo"
   ],
   "name": "nephis-mcp-server",
-  "description": "Sub-6ms hardware KVM MicroVM sandboxes, 30ms zero-copy PostgreSQL branching, and sub-38ms online code judging in ap-south-1.",
+  "description": "Low-latency hardware KVM MicroVM sandboxes, zero-copy PostgreSQL branching, and Judge0-compatible online code judging in ap-south-1.",
   "type": "mcp_server",
   "status": "active",
   "transport": [

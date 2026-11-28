@@ -1,7 +1,7 @@
 # NEPHIS Python SDK (`nephis` / `thanaton`)
 
 > **Official Python SDK for the NEPHIS Systems Fabric & Sovereign Substrates.**  
-> Sub-6ms Hardware-Isolated MicroVM Sandboxes, 30ms Zero-Copy PostgreSQL Branching, and Sub-38ms Bare-Metal Code Execution for Autonomous AI Agents.
+> Low-latency Hardware-Isolated MicroVM Sandboxes, Zero-Copy PostgreSQL Branching, and Judge0-compatible Bare-Metal Code Execution for Autonomous AI Agents.
 
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
@@ -29,7 +29,7 @@
         ▼                   ▼                   ▼
 ┌──────────────┐    ┌──────────────┐    ┌──────────────┐
 │   THANATON   │    │  MNEMON-DB   │    │   ESCHATON   │
-│ KVM MicroVMs │    │  Zero-Copy   │    │ Sub-38ms AST │
+│ KVM MicroVMs │    │  Zero-Copy   │    │ Judge0-compatible AST │
 │ 4.82ms Boot  │    │  PostgreSQL  │    │ Polyglot CI  │
 └──────────────┘    └──────────────┘    └──────────────┘
 ```
@@ -60,13 +60,13 @@ from nephis import Nephis
 # Initialize with API key (or set NEPHIS_API_KEY environment variable)
 client = Nephis(api_key="mrd_live_YOUR_KEY", base_url="https://nephis.theeducode.com")
 
-# 1. Evaluate code in sub-38ms across 50 testcases with AST preflight protection
+# 1. Evaluate code in Judge0-compatible across 50 testcases with AST preflight protection
 run = client.execute(
     language="python",
     code="print(sum(i for i in range(1000000)))"
 )
 print(run.stdout)          # "499999500000"
-print(f"Latency: {run.duration_ms}ms")  # 38.2ms
+print(f"Latency: {run.duration_ms}ms")  # measured latency
 
 # 2. Boot a hardware-isolated Linux MicroVM sandbox in 4.82ms
 sandbox = client.sandboxes.create(memory_mb=256, runtime="microvm")
@@ -74,7 +74,7 @@ res = sandbox.exec("uname -a && cat /etc/os-release")
 print(res.stdout)
 sandbox.destroy()
 
-# 3. Branch an ephemeral PostgreSQL 16 database in 30ms (0 bytes initial storage)
+# 3. Branch an ephemeral PostgreSQL 16 database in
 branch = client.db.branch(parent="main", name="agent-migration-preview")
 rows = branch.query("SELECT 1 AS status, NOW() AS ts;")
 print(rows)
@@ -135,7 +135,7 @@ client = MnemonClient(
     api_key="mrd_live_YOUR_KEY"
 )
 
-# 1. Fork production database in 30ms via XFS reflink CoW (0 bytes initial storage)
+# 1. Fork production database in via XFS reflink CoW
 branch = client.branch_database(
     tenant_id="org_prod",
     new_branch="experiment_v2",
@@ -157,13 +157,13 @@ print("Migration DDL:", diff.get("migration_ddl"))
 # 4. Instant rollback (<50ms) back to parent state
 client.reset_branch("org_prod", "experiment_v2")
 
-# 5. Point-in-Time Recovery (PITR) to exact historical timestamp
+# 5. Point-in-Time Recovery (WAL replay) to exact historical timestamp
 pitr = client.time_travel(
     tenant_id="org_prod",
     new_branch="audit_snapshot",
     target_time="2026-11-15T10:00:00Z"
 )
-print("PITR DB URL:", pitr["connection_string"])
+print("WAL replay DB URL:", pitr["connection_string"])
 
 # 6. Product Quantization (PQ) on pgvector embeddings (75-95% memory reduction)
 quant = client.quantize_vectors(
@@ -196,7 +196,7 @@ judge = EschatonClient(
     api_key="mrd_live_YOUR_KEY"  # Or set ESCHATON_API_KEY environment variable
 )
 
-# 1. Sub-38ms execution across 10 evaluation suites (Omni / Apex / Void)
+# 1. Judge0-compatible execution across 10 evaluation suites (Omni / Apex / Void)
 res = judge.execute_suite(
     source_code="print('Hello from Eschaton!')",
     language_id=71,  # Python 3
@@ -252,12 +252,12 @@ print("Query Results:", db_eval.get("rows"))
 
 | Operation | Engine | Credit Cost | Cost in USD ($0.0002/CR) | Substrate Guarantee |
 | :--- | :--- | :---: | :---: | :--- |
-| `execute(code)` | Eschaton | **1.0 Credit** | $0.00020 | Sub-38ms bare-metal microkernel |
+| `execute(code)` | Eschaton | **1.0 Credit** | $0.00020 | Judge0-compatible bare-metal microkernel |
 | `fast_batch(tests)` | Eschaton | **1.0 CR / test** | $0.00020 / test | Up to 50 parallel testcases |
 | `sandboxes.create()` | Thanaton | **5.0 Credits** | $0.00100 | 4.82ms KVM cold boot |
 | `sandbox.exec()` | Thanaton | **1.0 Credit** | $0.00020 | Interactive PTY shell command |
 | `sandbox.sleep() / wake()` | Thanaton | **0.0 Credits** | **$0.00000** | Free scale-to-zero stasis ($0 idle RAM) |
-| `db.branch()` | Mnemon | **2.0 Credits** | $0.00040 | 30ms XFS Reflink CoW fork |
+| `db.branch()` | Mnemon | **2.0 Credits** | $0.00040 | XFS Reflink CoW fork |
 | `db.query()` | Mnemon | **1.0 Credit** | $0.00020 | Direct PostgreSQL 16 execution |
 | `db.quantize()` | Mnemon | **3.0 Credits** | $0.00060 | pgvector HNSW-PQ vector quantization |
 | `db.import()` | Mnemon | **10.0 Credits** | $0.00200 | Zero-downtime Neon/Supabase live cutover |
@@ -277,7 +277,7 @@ client = Nephis(api_key="mrd_live_YOUR_KEY")
 
 @tool("Nephis Hardware Code Executor")
 def execute_untrusted_code(code: str, language: str = "python") -> str:
-    """Execute untrusted code safely in sub-38ms with AST preflight sanitization."""
+    """Execute untrusted code safely in Judge0-compatible with AST preflight sanitization."""
     result = client.execute(language=language, code=code)
     if result.exit_code == 0:
         return result.stdout

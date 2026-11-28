@@ -1,7 +1,7 @@
 # NEPHIS Unified CLI Manual & Command Reference (`nephisctl`)
 
 > **Master Reference Manual for Autonomous AI Coding Agents & Human Developers.**  
-> Native CLI tools for **Thanaton** (Hardware MicroVMs), **Eschaton** (38ms Polyglot Judge), **Mnemon-DB** (30ms Zero-Copy Postgres), and **Nephis** (Unified Gateway).
+> Native CLI tools for **Thanaton** (Hardware MicroVMs), **Eschaton** (low-latency Polyglot Judge), **Mnemon-DB** (Zero-Copy Postgres), and **Nephis** (Unified Gateway).
 
 [![CLI Version](https://img.shields.io/badge/CLI-v2.4.0-blue.svg)](https://nephis.theeducode.com)
 [![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-brightgreen.svg)](#-3-step-quickstart-for-autonomous-ai-agents)
@@ -78,7 +78,7 @@ Rate Limit:        10 req/s
 
 ### Step 3: Run Your Task (Copy-Paste Recipes)
 
-#### 🚀 Recipe A: Run Code Instantly (Sub-38ms Polyglot Execution)
+#### 🚀 Recipe A: Run Code Instantly (Judge0-compatible Polyglot Execution)
 Execute scripts or inline code snippets across Python, JavaScript, TypeScript, Go, Rust, C++, Java:
 
 ```powershell
@@ -113,7 +113,7 @@ python sdk/cli/thanaton wake sbx-101
 ```
 
 #### 🗄️ Recipe C: Serverless PostgreSQL 16 Branching & Querying
-Fork an isolated database branch in 30ms (0 bytes initial storage) and run SQL:
+Fork an isolated database branch in and run SQL:
 
 ```powershell
 # 1. Check database identity & tier
@@ -166,7 +166,7 @@ The NEPHIS CLI suite is organized into 4 cohesive tools:
 | :--- | :--- | :--- | :--- |
 | `nephisctl` | **Nephis Unified** | `https://nephis.theeducode.com` | Master control plane, account identity, credits, and universal routing |
 | `thanaton` | **Thanaton MicroVM** | `https://thanaton.theeducode.com` | Hardware KVM sandboxes, web app deployments, scaling, custom domains |
-| `mnemon` | **Mnemon-DB** | `https://mnemon.theeducode.com` | Serverless PostgreSQL 16, 30ms CoW branching, schema diffing, CDC |
+| `mnemon` | **Mnemon-DB** | `https://mnemon.theeducode.com` | Serverless PostgreSQL 16, CoW branching, schema diffing, CDC |
 | `eschatonctl` | **Eschaton Judge** | `https://eschaton.theeducode.com` | High-throughput polyglot compiler execution and 50-test fast-batching |
 
 ---
@@ -195,7 +195,7 @@ All tools respect a single, unified environment variable standard:
 | `nephisctl balance` | Quick check of remaining credits and expiration | `python sdk/cli/nephisctl balance` |
 | `nephisctl login [key]` | Save API key or claim 500 free credits via Hashcash PoW | `python sdk/cli/nephisctl login` |
 | `nephisctl status` | Check live operational health across all cloud engines | `python sdk/cli/nephisctl status` |
-| `nephisctl run <code/file>` | Run standalone code in 38ms (Python, JS, Go, Rust, C++) | `python sdk/cli/nephisctl run "print('hi')"` |
+| `nephisctl run <code/file>` | Run standalone code in low-latency (Python, JS, Go, Rust, C++) | `python sdk/cli/nephisctl run "print('hi')"` |
 | `nephisctl fast-batch` | Run up to 50 concurrent testcases in memory | `python sdk/cli/nephisctl fast-batch -f sol.py --tests-file tests.json` |
 | `nephisctl up` | Provision a new microVM sandbox | `python sdk/cli/nephisctl up --runtime microvm --memory-mb 512` |
 | `nephisctl exec <id> -- <cmd>`| Run command inside sandbox | `python sdk/cli/nephisctl exec sbx-101 -- ls -la` |
@@ -232,7 +232,7 @@ All tools respect a single, unified environment variable standard:
 | `mnemon whoami` | Display database tenant identity and limits | `python sdk/cli/mnemon whoami` |
 | `mnemon list` | List all database tenants | `python sdk/cli/mnemon list` |
 | `mnemon create <name>` | Provision a new PostgreSQL 16 tenant | `python sdk/cli/mnemon create my_db` |
-| `mnemon branch <db> <name>`| Instant 30ms zero-copy database fork | `python sdk/cli/mnemon branch my_db preview_branch` |
+| `mnemon branch <db> <name>`| Instant zero-copy database fork | `python sdk/cli/mnemon branch my_db preview_branch` |
 | `mnemon branches <db>` | List all branches across cluster | `python sdk/cli/mnemon branches my_db` |
 | `mnemon sql <db> "<query>"`| Execute SQL query on database | `python sdk/cli/mnemon sql my_db "SELECT 1;"` |
 | `mnemon diff <db> --branch <b>`| Schema DDL diff between branch and parent | `python sdk/cli/mnemon diff my_db --branch preview_branch` |
@@ -260,7 +260,7 @@ All tools respect a single, unified environment variable standard:
 | `eschatonctl account` | Inspect remaining execution credits & tier | `python scripts/eschatonctl.py account` |
 | `eschatonctl run <file>` | Submit local code file to judge (<4ms) | `python scripts/eschatonctl.py run solution.cpp` |
 | `eschatonctl exec "<code...>"`| Submit inline code snippet to judge | `python scripts/eschatonctl.py exec "print(42)"` |
-| `eschatonctl batch <file> <tests>`| Run up to 50 test cases concurrently in 38ms | `python scripts/eschatonctl.py batch sol.cpp tests.json` |
+| `eschatonctl batch <file> <tests>`| Run up to 50 test cases concurrently in low-latency | `python scripts/eschatonctl.py batch sol.cpp tests.json` |
 | `eschatonctl complexity <file>`| Instruction counting & empirical Big-O analyzer | `python scripts/eschatonctl.py complexity solution.cpp` |
 | `eschatonctl sanitize <file>` | ASan + UBSan memory safety & leak detection | `python scripts/eschatonctl.py sanitize buffer_test.c` |
 | `eschatonctl dbms "<sql>"` | Ephemeral in-memory SQL database sandbox | `python scripts/eschatonctl.py dbms "SELECT 1;" --engine postgres` |
@@ -280,7 +280,7 @@ All tools respect a single, unified environment variable standard:
 | `thanaton exec <id> -- <cmd>` | Thanaton | **1.0 Credit** | $0.00020 | &lt; 8ms PTY shell command |
 | `thanaton sleep / wake` | Thanaton | **0.0 Credits** | $0.00000 | Free scale-to-zero ($0 idle RAM) |
 | `thanaton logs <id>` | Thanaton | **0.0 Credits** | $0.00000 | Free real-time stdout/stderr stream |
-| `mnemon branch <db> <name>`| Mnemon-DB | **2.0 Credits** | $0.00040 | 30ms Reflink CoW fork (0 bytes initial) |
+| `mnemon branch <db> <name>`| Mnemon-DB | **2.0 Credits** | $0.00040 | Reflink CoW fork |
 | `mnemon sql <db> "<query>"`| Mnemon-DB | **1.0 Credit** | $0.00020 | &lt; 5ms direct PostgreSQL query |
 | `mnemon diff <db> --branch`| Mnemon-DB | **1.0 Credit** | $0.00020 | Schema DDL diff generation |
 | `mnemon reset <db> <branch>`| Mnemon-DB | **1.0 Credit** | $0.00020 | &lt; 35ms snapshot reset |
@@ -294,7 +294,7 @@ All tools respect a single, unified environment variable standard:
 | `mnemon search <db> "<query>"`| Mnemon-DB | **1.0 Credit** | $0.00020 | ParadeDB BM25 hybrid full-text search |
 | `mnemon branches / tables / ext`| Mnemon-DB | **0.0 Credits** | $0.00000 | Free metadata catalog lookup |
 | `eschatonctl run <file>` | Eschaton | **1.0 Credit** | $0.00020 | Sub-4ms microkernel code execution |
-| `eschatonctl batch <file> <tests>`| Eschaton | **1.0 CR / test**| $0.00020 / test | Up to 50 parallel tests in &lt;38ms |
+| `eschatonctl batch <file> <tests>`| Eschaton | **1.0 CR / test**| $0.00020 / test | Up to 50 parallel tests in &lt;low-latency |
 | `eschatonctl complexity <file>`| Eschaton | **2.0 Credits** | $0.00040 | Instruction counting & Big-O analyzer |
 | `eschatonctl sanitize <file>`| Eschaton | **2.0 Credits** | $0.00040 | ASan + UBSan memory safety & leaks |
 | `eschatonctl dbms "<sql>"` | Eschaton | **2.0 Credits** | $0.00040 | In-memory ephemeral SQL database sandbox |
